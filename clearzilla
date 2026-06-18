@@ -1,102 +1,63 @@
 #!/usr/bin/env bash
-# clearzilla — Godzilla stomps in and fire-breaths your terminal clean
-# Lightweight, dependency-free. Animation scales with terminal content.
+# clearzilla — Godzilla fire-breaths your terminal clean
+# Head anchored on the right; a fanning flame sweeps left, clearing only
+# characters the fire has actually reached.
 
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
   BOLD="\033[1m"
   DIM="\033[2m"
   GREEN="\033[1;32m"
+  DGREEN="\033[32m"
   YELLOW="\033[1;33m"
   RED="\033[1;31m"
   ORANGE="\033[38;5;208m"
+  HOT="\033[38;5;226m"
+  CORE="\033[38;5;196m"
   RESET="\033[0m"
   HIDE_CURSOR=$'\033[?25l'
   SHOW_CURSOR=$'\033[?25h'
 else
-  BOLD="" DIM="" GREEN="" YELLOW="" RED="" ORANGE="" RESET=""
+  BOLD="" DIM="" GREEN="" DGREEN="" YELLOW="" RED="" ORANGE="" HOT="" CORE="" RESET=""
   HIDE_CURSOR="" SHOW_CURSOR=""
 fi
 
-# ── godzilla sprites (17 lines — detailed, paclear-scale) ─────────────────────
-readonly -a ZILLA_WALK1=(
-  '       /‾‾‾‾‾‾‾‾‾/'
-  '      /  @     @   /'
-  '     |      ^       |'
-  '     |     /█/      |'
-  '     |    / | /     |'
-  '     |   /  |  /    |'
-  '     |  |   |   |   |'
-  '      /|   |   |  /'
-  '       |   |   |  |'
-  '    ___|   |   |  |___'
-  '   /   |   |   |  |   /'
-  '  |   /       /   |    |'
-  '   / |         | /    /'
-  '    /|         |/    /'
-  '     |_________|    /'
-  '      /       /    /'
-  '     /‾‾‾‾‾‾‾‾‾//'
+# ── godzilla head (left-facing profile: dorsal fins, brow, snout, open jaw) ─
+readonly -a ZILLA_HEAD=(
+  '        /|/|/|'
+  '       /       /'
+  '      / .---.   /'
+  '     | /     /  |'
+  '     | | @  |   |'
+  '     | |  --|   |'
+  '     | /   /    |'
+  '     | | ####>  |'
+  '     | | >##<   |'
+  '     |  /####/  |'
+  '      /________/'
+  '         |  |'
 )
 
-readonly -a ZILLA_WALK2=(
-  '       /‾‾‾‾‾‾‾‾‾/'
-  '      /  @     @   /'
-  '     |      ^       |'
-  '     |     /█/      |'
-  '     |    / | /     |'
-  '     |   /  |  /    |'
-  '     |  |   |   |   |'
-  '      /|   |   |  /'
-  '       |   |   |  |'
-  '    ___|   |   |  |___'
-  '   /   |   |   |  |   /'
-  '  |   /       /   |    |'
-  '   / |         | /    /'
-  '    /|         |/    /'
-  '     |_________|    /'
-  '      /  /     /   /'
-  '     /‾‾‾‾‾‾‾‾‾//'
-)
-
-readonly -a ZILLA_BREATH=(
-  '       /‾‾‾‾‾‾‾‾‾/'
-  '      /  @     @   /'
-  '     |    >█>~~~<   |'
-  '     |     /█/      |'
-  '     |    / | /     |'
-  '     |   /  |  /    |'
-  '     |  |   |   |   |'
-  '      /|   |   |  /'
-  '       |   |   |  |'
-  '    ___|   |   |  |___'
-  '   /   |   |   |  |   /'
-  '  |   /       /   |    |'
-  '   / |         | /    /'
-  '    /|         |/    /'
-  '     |_________|    /'
-  '      /       /    /'
-  '     /‾‾‾‾‾‾‾‾‾//'
-)
-
-readonly ZILLA_H=${#ZILLA_WALK1[@]}
+readonly HEAD_H=${#ZILLA_HEAD[@]}
 
 _sprite_width() {
   local -n _lines=$1
-  local w=0
+  local w=0 len
   for _l in "${_lines[@]}"; do
-    ((${#_l} > w)) && w=${#_l}
+    len=${#_l}
+    (( len > w )) && w=$len
   done
   echo "$w"
 }
 
-readonly ZILLA_W=$(_sprite_width ZILLA_WALK1)
-readonly MOUTH_COL=12   # column offset from sprite origin to fire origin
-readonly MOUTH_ROW=3    # row offset (0-based) within sprite for fire beam
+readonly HEAD_W=$(_sprite_width ZILLA_HEAD)
+# Mouth emitter: left side of head, row index within sprite (0-based)
+readonly MOUTH_ROW_OFF=7
+readonly MOUTH_COL_OFF=3
 
 SPEED=1
 FAST=0
@@ -112,7 +73,8 @@ ${BOLD}Usage:${RESET}
   clearzilla ${YELLOW}-h${RESET}                   Show this help
   clearzilla ${YELLOW}-v${RESET}                   Show version
 
-Animation length scales with how much content is on screen.
+Godzilla's head stays fixed on the right. His flame fans leftward,
+clearing characters only as the fire front reaches them.
 EOF
 }
 
@@ -133,9 +95,6 @@ get_content_lines() {
   fi
   if [[ -z "$row" || "$row" -eq 0 ]]; then
     row=$TERM_ROWS
-  fi
-  if (( row < ZILLA_H )); then
-    row=$ZILLA_H
   elif (( row > TERM_ROWS )); then
     row=$TERM_ROWS
   fi
@@ -143,7 +102,8 @@ get_content_lines() {
 }
 
 frame_delay() {
-  local ms=$(( 20 / SPEED ))
+  # More on-screen content → longer sweep
+  local ms=$(( (18 + CONTENT_LINES / 4) / SPEED ))
   (( ms < 1 )) && ms=1
   sleep "0.$(printf '%03d' "$ms")"
 }
@@ -152,103 +112,185 @@ move_to() {
   printf '\033[%d;%dH' "$1" "$2"
 }
 
-draw_sprite() {
-  local -n lines=$1
-  local row=$2 col=$3 color=$4
-  local i=0
-  for line in "${lines[@]}"; do
-    move_to $((row + i)) "$col"
-    printf '%b%s%b' "$color" "$line" "$RESET"
-    ((i++)) || true
-  done
-}
-
-erase_sprite() {
-  local row=$1 col=$2
-  local blank
-  blank=$(printf '%*s' "$ZILLA_W" '')
-  local i
-  for ((i = 0; i < ZILLA_H; i++)); do
-    move_to $((row + i)) "$col"
-    printf '%s' "$blank"
-  done
-}
-
-draw_fire_beam() {
-  local band_row=$1 col=$2
-  local fire_len=$((TERM_COLS - col + 1))
-  local i j
-  if (( fire_len <= 0 )); then
-    return
-  fi
-  for ((i = 0; i < ZILLA_H; i++)); do
-    move_to $((band_row + i)) "$col"
-    for ((j = 0; j < fire_len; j++)); do
-      case $((j % 4)) in
-        0) printf '%b~%b' "$RED" "$RESET" ;;
-        1) printf '%b=%b' "$ORANGE" "$RESET" ;;
-        2) printf '%b*%b' "$YELLOW" "$RESET" ;;
-        3) printf '%b>%b' "$RED" "$RESET" ;;
-      esac
-    done
-  done
-}
-
-scorch_band_right() {
-  local band_row=$1 col=$2
-  local fire_len=$((TERM_COLS - col + 1))
-  local i
-  if (( fire_len <= 0 )); then
-    return
-  fi
-  for ((i = 0; i < ZILLA_H; i++)); do
-    move_to $((band_row + i)) "$col"
-    printf '%*s' "$fire_len" ''
-  done
-}
-
 clear_screen() {
   printf '\033[2J\033[H'
 }
 
-# ── animation (paclear-style band sweep) ──────────────────────────────────────
-# Godzilla is ZILLA_H lines tall. Each horizontal pass clears one full band
-# before stepping down to the next band — exactly like paclear's pac-man sweep.
+draw_head() {
+  local top_row=$1 left_col=$2
+  local i=0
+  for line in "${ZILLA_HEAD[@]}"; do
+    move_to $((top_row + i)) "$left_col"
+    printf '%b%s%b' "$GREEN" "$line" "$RESET"
+    ((i++)) || true
+  done
+}
+
+# Turbulent fan boundary — cone widens as flame travels left
+fan_half_width() {
+  local dist=$1 max_spread=$2 frame=$3
+  local base=$(( 1 + dist / 2 ))
+  local wave=$(( (dist * 3 + frame * 2) % 3 ))
+  local lobe=$(( (dist / 5 + frame) % 2 ))
+  local spread=$(( base + wave + lobe ))
+  (( spread > max_spread )) && spread=$max_spread
+  echo "$spread"
+}
+
+# Wispy outer flame tendrils (visual only — narrower than burn zone)
+fan_wisp_width() {
+  local dist=$1 max_spread=$2 frame=$3
+  local spread
+  spread=$(fan_half_width "$dist" "$max_spread" "$frame")
+  echo $(( spread + 1 + (frame + dist) % 2 ))
+}
+
+# Pick fire glyph and color by distance from mouth and position in fan
+fire_glyph() {
+  local dist=$1 row_off=$2 frame=$3
+  local slot=$(( (dist * 11 + row_off * 7 + frame * 5) % 12 ))
+  local ch color
+
+  if (( dist < 3 )); then
+    case $((slot % 4)) in
+      0) ch='*'; color=$HOT ;;
+      1) ch='#'; color=$YELLOW ;;
+      2) ch='*'; color=$CORE ;;
+      *) ch='#'; color=$ORANGE ;;
+    esac
+  elif (( dist < 8 )); then
+    case $((slot % 5)) in
+      0) ch='~'; color=$ORANGE ;;
+      1) ch='='; color=$RED ;;
+      2) ch='^'; color=$YELLOW ;;
+      3) ch='*'; color=$ORANGE ;;
+      *) ch='~'; color=$RED ;;
+    esac
+  else
+    case $((slot % 6)) in
+      0) ch='~'; color=$RED ;;
+      1) ch='>'; color=$ORANGE ;;
+      2) ch='^'; color=$RED ;;
+      3) ch='='; color=$DGREEN ;;
+      4) ch='~'; color=$ORANGE ;;
+      *) ch='>'; color=$RED ;;
+    esac
+  fi
+  printf '%b%s%b' "$color" "$ch" "$RESET"
+}
+
+# ── animation ─────────────────────────────────────────────────────────────────
 animate() {
   get_dims
   get_content_lines
 
-  local diff_y=$(( CONTENT_LINES - ZILLA_H ))
-  (( diff_y < 0 )) && diff_y=0
+  local head_col=$(( TERM_COLS - HEAD_W + 1 ))
+  local head_row=$(( (CONTENT_LINES - HEAD_H) / 2 + 1 ))
+  (( head_row < 1 )) && head_row=1
+  if (( head_row + HEAD_H - 1 > TERM_ROWS )); then
+    head_row=$(( TERM_ROWS - HEAD_H + 1 ))
+  fi
 
-  local y x frame=0 toggle=0
-  local fire_col
+  local mouth_row=$(( head_row + MOUTH_ROW_OFF ))
+  local mouth_col=$(( head_col + MOUTH_COL_OFF ))
+
+  local max_spread=$(( CONTENT_LINES / 2 ))
+  (( max_spread < 2 )) && max_spread=2
+  (( max_spread > TERM_ROWS / 2 )) && max_spread=$(( TERM_ROWS / 2 ))
+
+  local max_reach=$(( mouth_col - 1 ))
+  (( max_reach < 1 )) && max_reach=1
+
+  local reach frame=0 col row dist spread wisp row_off d
 
   printf '%s' "$HIDE_CURSOR"
+  draw_head "$head_row" "$head_col"
 
-  for ((y = 0; y <= diff_y; y += ZILLA_H)); do
-    local band_row=$((y + 1))
+  for ((reach = 1; reach <= max_reach; reach++)); do
+    # Scorch trail: only columns the flame has already passed
+    for ((d = 1; d < reach; d++)); do
+      col=$(( mouth_col - d ))
+      (( col < 1 )) && continue
+      spread=$(fan_half_width "$d" "$max_spread" "$frame")
+      for ((row_off = -spread; row_off <= spread; row_off++)); do
+        row=$(( mouth_row + row_off ))
+        (( row < 1 || row > CONTENT_LINES )) && continue
+        move_to "$row" "$col"
+        printf ' '
+      done
+    done
 
-    for ((x = 1; x <= TERM_COLS - ZILLA_W; x++)); do
-      if (( toggle == 10 )); then
-        draw_sprite ZILLA_BREATH "$band_row" "$x" "$GREEN"
-        fire_col=$((x + MOUTH_COL))
-        draw_fire_beam "$band_row" "$fire_col"
-        frame_delay
-        scorch_band_right "$band_row" "$fire_col"
-        erase_sprite "$band_row" "$x"
-        toggle=0
-      else
-        if (( frame % 2 == 0 )); then
-          draw_sprite ZILLA_WALK1 "$band_row" "$x" "$GREEN"
-        else
-          draw_sprite ZILLA_WALK2 "$band_row" "$x" "$GREEN"
+    # Leading fire front — the flame hasn't passed here yet
+    col=$(( mouth_col - reach ))
+    if (( col >= 1 )); then
+      spread=$(fan_half_width "$reach" "$max_spread" "$frame")
+      for ((row_off = -spread; row_off <= spread; row_off++)); do
+        row=$(( mouth_row + row_off ))
+        (( row < 1 || row > CONTENT_LINES )) && continue
+        move_to "$row" "$col"
+        fire_glyph "$reach" "$row_off" "$frame"
+      done
+
+      # Nozzle glow — hot core fixed at the mouth opening
+      for ((d = 0; d < 3; d++)); do
+        col=$(( mouth_col - d ))
+        (( col < 1 )) && continue
+        for ((row_off = -1; row_off <= 1; row_off++)); do
+          row=$(( mouth_row + row_off ))
+          (( row < 1 || row > CONTENT_LINES )) && continue
+          move_to "$row" "$col"
+          fire_glyph "$d" "$row_off" $((frame + d))
+        done
+      done
+
+      # Outer wisps ahead of the main front (visual flair, no clearing yet)
+      if (( reach < max_reach )); then
+        d=$(( reach + 1 ))
+        col=$(( mouth_col - d ))
+        if (( col >= 1 )); then
+          wisp=$(fan_wisp_width "$d" "$max_spread" "$frame")
+          for ((row_off = -wisp; row_off <= wisp; row_off++)); do
+            # Skip rows already inside the solid burn cone
+            spread=$(fan_half_width "$d" "$max_spread" "$frame")
+            (( row_off >= -spread && row_off <= spread )) && continue
+            row=$(( mouth_row + row_off ))
+            (( row < 1 || row > CONTENT_LINES )) && continue
+            move_to "$row" "$col"
+            printf '%b~%b' "$DGREEN" "$RESET"
+          done
         fi
-        frame_delay
-        erase_sprite "$band_row" "$x"
-        ((toggle++)) || true
-        ((frame++)) || true
       fi
+
+      # Smoldering embers one step behind the front
+      if (( reach > 1 )); then
+        d=$(( reach - 1 ))
+        col=$(( mouth_col - d ))
+        spread=$(fan_half_width "$d" "$max_spread" $((frame + 1)))
+        for ((row_off = -spread; row_off <= spread; row_off++)); do
+          (( (row_off + frame) % 3 == 0 )) || continue
+          row=$(( mouth_row + row_off ))
+          (( row < 1 || row > CONTENT_LINES )) && continue
+          move_to "$row" "$col"
+          fire_glyph "$d" "$row_off" $((frame + 2))
+        done
+      fi
+    fi
+
+    draw_head "$head_row" "$head_col"
+    frame_delay
+    ((frame++)) || true
+  done
+
+  # Final frame: burn everything the fan covered, then full clear
+  for ((d = 1; d <= max_reach; d++)); do
+    col=$(( mouth_col - d ))
+    (( col < 1 )) && continue
+    spread=$(fan_half_width "$d" "$max_spread" "$frame")
+    for ((row_off = -spread; row_off <= spread; row_off++)); do
+      row=$(( mouth_row + row_off ))
+      (( row < 1 || row > CONTENT_LINES )) && continue
+      move_to "$row" "$col"
+      printf ' '
     done
   done
 
