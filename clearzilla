@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.14"
+VERSION="0.3.15"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -72,13 +72,13 @@ readonly MOUTH_COL=14   # column offset from sprite origin to fire origin (snout
 readonly ENABLE_FIRE=0  # fire breath disabled for now
 
 readonly -a DEBRIS_CHARS=( '░' '▒' '▓' ':' '.' ',' '`' '~' '%' '#' '*' '+' 'x' '°' )
-readonly DEBRIS_MIN=1
-readonly DEBRIS_MAX=2
+readonly DEBRIS_MIN=2
+readonly DEBRIS_MAX=4
 readonly ENABLE_DEBRIS_ANIM=1
 readonly DEBRIS_ANIM_INTERVAL=6
 readonly DEBRIS_ANIM_TAIL=14
 readonly DEBRIS_ANIM_MAX=6    # cap particles redrawn per anim frame
-readonly DEBRIS_TRACK_MAX=80  # cap tracked sites for wake animation
+readonly DEBRIS_TRACK_MAX=120 # cap tracked sites for wake animation
 readonly DEBRIS_FADE_RATE=2   # previous-band clear runs at 1/N of Godzilla sweep rate
 
 SPEED=1
@@ -128,7 +128,7 @@ band_height() {
 
 frame_delay() {
   local extra=${1:-0}
-  local ms=$(( (30 + extra) / SPEED ))
+  local ms=$(( (40 + extra) / SPEED ))
   (( ms < 3 )) && ms=3
   sleep "0.$(printf '%03d' "$ms")"
 }
