@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.10"
+VERSION="0.3.11"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -74,8 +74,7 @@ readonly ENABLE_FIRE=0  # fire breath disabled for now
 readonly -a DEBRIS_CHARS=( '░' '▒' '▓' ':' '.' ',' '`' '~' '%' '#' '*' '+' 'x' '°' )
 readonly DEBRIS_MIN=2
 readonly DEBRIS_MAX=5
-readonly DEBRIS_ANIM_INTERVAL=4
-readonly DEBRIS_ANIM_TAIL=28   # only animate debris in this many cols behind sprite
+readonly ENABLE_DEBRIS_ANIM=0  # debris animation disabled for now
 
 SPEED=1
 FAST=0
@@ -169,12 +168,10 @@ erase_sprite() {
   done
 }
 
-# Sparse ash particles — stored globally and animated until the final clear.
-declare -a DEBRIS_SITES=()
-
+# Sparse static ash particles — drawn once per stomp until the final clear.
 debris_color() {
-  local seed=$1 tick=$2
-  case $(((seed + tick * 3) % 14)) in
+  local seed=$1
+  case $((seed % 14)) in
     0) printf '%s' "$ORANGE" ;;
     1) printf '%s' "$RED" ;;
     2|3|4) printf '%s' "$ASH" ;;
@@ -182,103 +179,54 @@ debris_color() {
   esac
 }
 
-debris_glyph() {
-  local seed=$1 tick=$2
-  local idx=$(( (seed + tick * 5) % ${#DEBRIS_CHARS[@]} ))
-  printf '%s' "${DEBRIS_CHARS[$idx]}"
-}
-
 draw_debris_particle() {
-  local r=$1 c=$2 seed=$3 tick=$4
-  local ch color
+  local r=$1 c=$2 seed=$3
+  local idx ch color
+  idx=$(( seed % ${#DEBRIS_CHARS[@]} ))
+  ch=${DEBRIS_CHARS[$idx]}
   move_to "$r" "$c"
-  ch=$(debris_glyph "$seed" "$tick")
-  color=$(debris_color "$seed" "$tick")
+  color=$(debris_color "$seed")
   printf '%b%s%b' "$color" "$ch" "$RESET"
 }
 
-# During a walk, only smolder the narrow wake directly behind Godzilla.
-# Older bands and settled ash are drawn once and left static.
-animate_debris() {
-  local tick=$1
-  local band_row=${2:-0} band_x=${3:-0} band_h=${4:-0}
-  local site r c seed site_band tail_start ch color
-  local wake_only=0
-  (( band_h > 0 )) && wake_only=1
-  tail_start=$(( band_x - DEBRIS_ANIM_TAIL ))
-  (( tail_start < 1 )) && tail_start=1
-
-  for site in "${DEBRIS_SITES[@]}"; do
-    read -r r c seed site_band <<< "$site"
-    if (( wake_only )); then
-      if (( site_band != band_row )); then
-        continue
-      fi
-      if (( r < band_row || r >= band_row + band_h || c >= band_x || c < tail_start )); then
-        continue
-      fi
-    fi
-    ch=$(debris_glyph "$seed" "$tick")
-    move_to "$r" "$c"
-    color=$(debris_color "$seed" "$tick")
-    printf '%b%s%b' "$color" "$ch" "$RESET"
+scatter_debris_in_zone() {
+  local band_row=$1 col_start=$2 col_end=$3
+  local h=${4:-$ZILLA_H}
+  local zone_w count i r c seed
+  (( col_end < col_start )) && return 0
+  zone_w=$(( col_end - col_start + 1 ))
+  count=$(( DEBRIS_MIN + RANDOM % (DEBRIS_MAX - DEBRIS_MIN + 1) ))
+  (( zone_w > 8 )) && count=$(( count + zone_w / 20 ))
+  for ((i = 0; i < count; i++)); do
+    r=$(( band_row + RANDOM % h ))
+    c=$(( col_start + RANDOM % zone_w ))
+    seed=$(( RANDOM * 997 + r * 31 + c * 17 + i * 13 ))
+    draw_debris_particle "$r" "$c" "$seed"
   done
 }
 
 scatter_debris() {
   local band_row=$1 col=$2 stride=$3
-  local h=${4:-$ZILLA_H} tick=${5:-0}
+  local h=${4:-$ZILLA_H}
   local wake_w=$stride
-  local count=$(( DEBRIS_MIN + RANDOM % (DEBRIS_MAX - DEBRIS_MIN + 1) ))
-  local i r c seed
   (( wake_w > ZILLA_W )) && wake_w=$ZILLA_W
   (( wake_w < 1 )) && wake_w=1
-  for ((i = 0; i < count; i++)); do
-    r=$(( band_row + RANDOM % h ))
-    c=$(( col + RANDOM % wake_w ))
-    seed=$(( RANDOM * 997 + r * 31 + c * 17 + i * 13 ))
-    DEBRIS_SITES+=( "$r $c $seed $band_row" )
-    draw_debris_particle "$r" "$c" "$seed" "$tick"
-  done
+  scatter_debris_in_zone "$band_row" "$col" $(( col + wake_w - 1 )) "$h"
 }
 
-# Completed bands stay on screen but no longer need tracking.
-prune_band_debris() {
-  local min_band_row=$1
-  local -a kept=()
-  local site r c seed site_band
-  for site in "${DEBRIS_SITES[@]}"; do
-    read -r r c seed site_band <<< "$site"
-    if (( site_band < min_band_row )); then
-      continue
-    fi
-    kept+=( "$site" )
-  done
-  DEBRIS_SITES=( "${kept[@]}" )
-}
-
-# Settled ash is already on screen; stop tracking it to keep redraw work flat.
-prune_settled_debris() {
-  local band_row=$1 band_x=$2
-  local tail_start=$(( band_x - DEBRIS_ANIM_TAIL ))
-  local -a kept=()
-  local site r c seed site_band
-  (( tail_start < 1 )) && tail_start=1
-  for site in "${DEBRIS_SITES[@]}"; do
-    read -r r c seed site_band <<< "$site"
-    if (( site_band == band_row && c < tail_start )); then
-      continue
-    fi
-    kept+=( "$site" )
-  done
-  DEBRIS_SITES=( "${kept[@]}" )
+# The last stomp only seeds debris in its wake slice; fill the trailing overlap.
+scatter_pass_tail() {
+  local band_row=$1 last_x=$2 stride=$3 band_h=$4
+  local tail_start=$(( last_x + stride ))
+  local tail_end=$(( last_x + ZILLA_W - 1 ))
+  (( tail_end > TERM_COLS )) && tail_end=$TERM_COLS
+  scatter_debris_in_zone "$band_row" "$tail_start" "$tail_end" "$band_h"
 }
 
 leave_stomp_wake() {
-  local band_row=$1 col=$2 stride=$3 band_h=$4 tick=$5
+  local band_row=$1 col=$2 stride=$3 band_h=$4
   erase_sprite "$band_row" "$col" "$band_h"
-  scatter_debris "$band_row" "$col" "$stride" "$band_h" "$tick"
-  prune_settled_debris "$band_row" "$col"
+  scatter_debris "$band_row" "$col" "$stride" "$band_h"
 }
 
 draw_fire_beam() {
@@ -339,48 +287,40 @@ animate() {
   local diff_y=$(( TERM_ROWS - ZILLA_H ))
   (( diff_y < 0 )) && diff_y=0
 
-  local y x frame=0 toggle=0 stride max_x walk_step=0 debris_tick=0
+  local y x frame=0 toggle=0 stride max_x
   local fire_col band_row band_h
 
   stride=$(walk_stride)
   max_x=$(( TERM_COLS - ZILLA_W ))
   (( max_x < 1 )) && max_x=1
 
-  DEBRIS_SITES=()
   printf '%s' "$HIDE_CURSOR"
 
   for ((y = 0; y <= diff_y; y += ZILLA_H)); do
     band_row=$((y + 1))
     band_h=$(band_height "$band_row")
-    (( y > 0 )) && prune_band_debris "$band_row"
 
     for ((x = 1; x <= max_x; x += stride)); do
-      ((walk_step++)) || true
-
       if (( ENABLE_FIRE && toggle == 10 )); then
         draw_sprite ZILLA_BREATH "$band_row" "$x" "$band_h"
         fire_col=$((x + MOUTH_COL))
         draw_fire_beam "$band_row" "$fire_col" "$band_h"
         breath_delay
         scorch_band_right "$band_row" "$fire_col" "$band_h"
-        leave_stomp_wake "$band_row" "$x" "$stride" "$band_h" "$debris_tick"
+        leave_stomp_wake "$band_row" "$x" "$stride" "$band_h"
         toggle=0
       else
         draw_sprite ZILLA_WALK1 "$band_row" "$x" "$band_h"
-        if (( walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
-          ((debris_tick++)) || true
-          animate_debris "$debris_tick" "$band_row" "$x" "$band_h"
-        fi
         frame_delay
-        leave_stomp_wake "$band_row" "$x" "$stride" "$band_h" "$debris_tick"
+        leave_stomp_wake "$band_row" "$x" "$stride" "$band_h"
         ((toggle++)) || true
         ((frame++)) || true
       fi
     done
+
+    scatter_pass_tail "$band_row" "$max_x" "$stride" "$band_h"
   done
 
-  ((debris_tick++)) || true
-  animate_debris "$debris_tick"
   printf '%s' "$SHOW_CURSOR"
   clear_screen
 }
