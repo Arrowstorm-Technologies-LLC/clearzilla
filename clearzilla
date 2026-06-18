@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-VERSION="0.4.0"
+VERSION="0.4.1"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -26,18 +26,16 @@ else
   HIDE_CURSOR="" SHOW_CURSOR=""
 fi
 
-# ── godzilla head only — left-aligned, profile facing RIGHT ───────────────────
+# ── godzilla head — tight right-facing profile, flush left ────────────────────
 readonly -a ZILLA_HEAD=(
-  '     /|/|/|/|'
-  '    /          /'
-  '   | .--------. /'
-  '   |/    @       >|'
-  '   ||       /____>|'
-  '   | /            /'
-  '   |  | >######>  |'
-  '   |  |  ######   |'
-  '   |   /__________/ '
-  '   |______________|'
+  '/|/|/|'
+  '|     /'
+  '|/ @  >>'
+  '|  \___)'
+  '| /#####>>'
+  '| |>■□□■<|'
+  '| /#####/|'
+  '| |‾‾‾‾/|'
 )
 
 readonly HEAD_H=${#ZILLA_HEAD[@]}
@@ -54,8 +52,8 @@ _sprite_width() {
 
 readonly HEAD_W=$(_sprite_width ZILLA_HEAD)
 # Mouth on the right side of the head sprite (0-based offsets)
-readonly MOUTH_ROW_OFF=6
-readonly MOUTH_COL_OFF=$(( HEAD_W - 4 ))
+readonly MOUTH_ROW_OFF=4
+readonly MOUTH_COL_OFF=$(( HEAD_W - 2 ))
 
 SPEED=1
 FAST=0
