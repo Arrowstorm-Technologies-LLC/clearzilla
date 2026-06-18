@@ -51,14 +51,15 @@ Pipe and non-TTY contexts automatically fall back to an instant clear (no animat
 
 ## How it works
 
-1. Detects terminal size and how many lines of content are on screen (via cursor position).
-2. Draws Godzilla's head — detailed profile, dorsal plates, open jaw — fixed on the **left** side, facing right.
-3. A cone-shaped flame fans out from his mouth, sweeping **rightward** column by column.
-4. Characters are cleared **only** when the fire front reaches them — untouched content stays visible until then.
-5. The fan widens as it travels (turbulent edges, hot core, outer wisps, trailing embers).
-6. Finishes with a full terminal reset.
+Like [paclear](https://github.com/orangekame3/paclear), Godzilla is a tall multi-line sprite (17 rows) that sweeps the terminal in horizontal bands:
 
-More lines on screen → wider fan + slower sweep → longer rampage.
+1. Detects terminal size and how many lines of content are on screen (via cursor position).
+2. Steps down the screen in bands equal to Godzilla's height.
+3. Each band: Godzilla walks left-to-right across the full width, clearing that entire band before moving to the next.
+4. Every 10 steps, Godzilla breathes fire — scorching the rest of the band to the right edge.
+5. Finishes with a full terminal reset.
+
+More lines on screen → more bands to sweep → longer rampage.
 
 ## Requirements
 
