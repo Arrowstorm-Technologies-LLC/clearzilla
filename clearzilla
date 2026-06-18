@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.19"
+VERSION="0.3.20"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -69,12 +69,13 @@ _sprite_width() {
 
 readonly ZILLA_W=$(_sprite_width ZILLA_SPRITE)
 readonly MOUTH_COL=14   # column offset from sprite origin to fire origin (snout)
-readonly ENABLE_FIRE=0  # fire breath disabled for now
+readonly ENABLE_FIRE=0    # fire breath disabled for now
+readonly ENABLE_DEBRIS=0  # ash wake disabled for now
 
 readonly -a DEBRIS_CHARS=( '░' '▒' '▓' ':' '.' ',' '`' '~' '%' '#' '*' '+' 'x' '°' )
 readonly DEBRIS_MIN=2
 readonly DEBRIS_MAX=4
-readonly ENABLE_DEBRIS_ANIM=1
+readonly ENABLE_DEBRIS_ANIM=0
 readonly DEBRIS_ANIM_INTERVAL=3
 readonly DEBRIS_ANIM_TAIL=22
 readonly DEBRIS_ANIM_MAX=14   # cap particles redrawn per anim frame
@@ -416,6 +417,7 @@ scatter_debris_in_zone() {
   local band_row=$1 col_start=$2 col_end=$3
   local h=${4:-$ZILLA_H} tick=${5:-0}
   local zone_w count i r c seed
+  (( ENABLE_DEBRIS )) || return 0
   (( col_end < col_start )) && return 0
   zone_w=$(( col_end - col_start + 1 ))
   count=$(( DEBRIS_MIN + RANDOM % (DEBRIS_MAX - DEBRIS_MIN + 1) ))
@@ -451,7 +453,9 @@ scatter_pass_tail() {
 leave_stomp_wake() {
   local band_row=$1 col=$2 stride=$3 band_h=$4 tick=$5
   erase_sprite "$band_row" "$col" "$band_h"
-  scatter_debris "$band_row" "$col" "$stride" "$band_h" "$tick"
+  if (( ENABLE_DEBRIS )); then
+    scatter_debris "$band_row" "$col" "$stride" "$band_h" "$tick"
+  fi
 }
 
 draw_fire_beam() {
@@ -538,7 +542,7 @@ animate() {
 
       if (( ENABLE_FIRE && toggle == 10 )); then
         draw_sprite ZILLA_BREATH "$band_row" "$x" "$band_h"
-        if (( y > 0 )); then
+        if (( ENABLE_DEBRIS && y > 0 )); then
           if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
             animate_debris_wake "$debris_tick" "$prev_band_row" "$TERM_COLS" "$prev_band_h" \
               "$band_row" "$x" "$band_h"
@@ -555,38 +559,42 @@ animate() {
         toggle=0
       else
         draw_sprite ZILLA_WALK1 "$band_row" "$x" "$band_h"
-        if (( y > 0 )); then
-          if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
-            animate_debris_wake "$debris_tick" "$prev_band_row" "$TERM_COLS" "$prev_band_h" \
+        if (( ENABLE_DEBRIS )); then
+          if (( y > 0 )); then
+            if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
+              animate_debris_wake "$debris_tick" "$prev_band_row" "$TERM_COLS" "$prev_band_h" \
+                "$band_row" "$x" "$band_h"
+            fi
+            dissolve_budget=$(dissolve_step_budget "$x" "$max_x")
+            dissolve_band_debris_batch "$prev_band_row" "$prev_band_h" "$dissolve_budget" "$debris_tick" \
               "$band_row" "$x" "$band_h"
           fi
-          dissolve_budget=$(dissolve_step_budget "$x" "$max_x")
-          dissolve_band_debris_batch "$prev_band_row" "$prev_band_h" "$dissolve_budget" "$debris_tick" \
-            "$band_row" "$x" "$band_h"
-        fi
-        if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
-          ((debris_tick++)) || true
-          animate_debris_wake "$debris_tick" "$band_row" "$x" "$band_h" \
-            "$band_row" "$x" "$band_h"
+          if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
+            ((debris_tick++)) || true
+            animate_debris_wake "$debris_tick" "$band_row" "$x" "$band_h" \
+              "$band_row" "$x" "$band_h"
+          fi
         fi
         frame_delay
         leave_stomp_wake "$band_row" "$x" "$stride" "$band_h" "$debris_tick"
-        (( ENABLE_DEBRIS_ANIM )) && prune_debris_tracking
+        (( ENABLE_DEBRIS && ENABLE_DEBRIS_ANIM )) && prune_debris_tracking
         ((toggle++)) || true
         ((frame++)) || true
       fi
     done
 
-    scatter_pass_tail "$band_row" "$max_x" "$stride" "$band_h" "$debris_tick"
-
-    if (( y > 0 )); then
-      finish_band_dissolve "$prev_band_row" "$prev_band_h"
+    if (( ENABLE_DEBRIS )); then
+      scatter_pass_tail "$band_row" "$max_x" "$stride" "$band_h" "$debris_tick"
+      if (( y > 0 )); then
+        finish_band_dissolve "$prev_band_row" "$prev_band_h"
+      fi
     fi
   done
 
-  # The last swept band never gets a following pass — dissolve its ash pocket by pocket.
-  finish_band_dissolve "$last_band_row" "$last_band_h"
-  wipe_tracked_debris_sites
+  if (( ENABLE_DEBRIS )); then
+    finish_band_dissolve "$last_band_row" "$last_band_h"
+    wipe_tracked_debris_sites
+  fi
 
   printf '%s' "$SHOW_CURSOR"
   clear_screen
