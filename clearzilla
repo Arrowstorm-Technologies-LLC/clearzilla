@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.13"
+VERSION="0.3.14"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -258,32 +258,33 @@ remove_band_debris_up_to() {
 }
 
 # Wipe the previous band left-to-right as Godzilla advances on the next pass.
+# Arg 4 is the *name* of the caller's last-cleared column variable.
 fade_previous_band() {
-  local prev_row=$1 prev_h=$2 clear_to_col=$3
-  local -n _last_clear=$4
+  local prev_row=$1 prev_h=$2 clear_to_col=$3 last_clear_var=$4
+  local last_clear="${!last_clear_var}"
   local c i
-  (( clear_to_col <= _last_clear )) && return 0
-  for ((c = _last_clear + 1; c <= clear_to_col; c++)); do
+  (( clear_to_col <= last_clear )) && return 0
+  for ((c = last_clear + 1; c <= clear_to_col; c++)); do
     for ((i = 0; i < prev_h; i++)); do
       move_to $((prev_row + i)) "$c"
       printf ' '
     done
   done
   remove_band_debris_up_to "$prev_row" "$clear_to_col"
-  _last_clear=$clear_to_col
+  printf -v "$last_clear_var" '%d' "$clear_to_col"
 }
 
 # Finish clearing the previous band at the same half-rate after Godzilla completes a pass.
 finish_previous_band_fade() {
-  local prev_row=$1 prev_h=$2 stride=$4 max_x=$5
-  local -n _last_clear=$3
-  local chunk target
+  local prev_row=$1 prev_h=$2 last_clear_var=$3 stride=$4 max_x=$5
+  local last_clear="${!last_clear_var}" chunk target
   chunk=$(( (stride * TERM_COLS) / (DEBRIS_FADE_RATE * max_x) ))
   (( chunk < 1 )) && chunk=1
-  while (( _last_clear < TERM_COLS )); do
-    target=$(( _last_clear + chunk ))
+  while (( last_clear < TERM_COLS )); do
+    target=$(( last_clear + chunk ))
     (( target > TERM_COLS )) && target=$TERM_COLS
-    fade_previous_band "$prev_row" "$prev_h" "$target" _last_clear
+    fade_previous_band "$prev_row" "$prev_h" "$target" "$last_clear_var"
+    last_clear="${!last_clear_var}"
     frame_delay
   done
 }
