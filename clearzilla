@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.2"
+VERSION="0.3.3"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -67,6 +67,7 @@ _sprite_width() {
 
 readonly ZILLA_W=$(_sprite_width ZILLA_SPRITE)
 readonly MOUTH_COL=14   # column offset from sprite origin to fire origin (snout)
+readonly ENABLE_FIRE=0  # fire breath disabled for now
 
 SPEED=1
 FAST=0
@@ -200,6 +201,15 @@ scorch_band_right() {
   done
 }
 
+scorch_band() {
+  local band_row=$1
+  local i
+  for ((i = 0; i < ZILLA_H; i++)); do
+    move_to $((band_row + i)) 1
+    printf '%*s' "$TERM_COLS" ''
+  done
+}
+
 clear_screen() {
   printf '\033[2J\033[H'
 }
@@ -227,7 +237,7 @@ animate() {
     local band_row=$((y + 1))
 
     for ((x = 1; x <= max_x; x += stride)); do
-      if (( toggle == 10 )); then
+      if (( ENABLE_FIRE && toggle == 10 )); then
         draw_sprite ZILLA_BREATH "$band_row" "$x"
         fire_col=$((x + MOUTH_COL))
         draw_fire_beam "$band_row" "$fire_col"
@@ -247,10 +257,12 @@ animate() {
         ((frame++)) || true
       fi
     done
+
+    scorch_band "$band_row"
   done
 
   printf '%s' "$SHOW_CURSOR"
-  clear_screen
+  move_to $(( CONTENT_LINES < TERM_ROWS ? CONTENT_LINES + 1 : TERM_ROWS )) 1
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
