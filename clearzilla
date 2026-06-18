@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -22,68 +22,39 @@ else
   HIDE_CURSOR="" SHOW_CURSOR=""
 fi
 
-# ── godzilla sprites (17 lines — detailed, paclear-scale) ─────────────────────
-readonly -a ZILLA_WALK1=(
-  '       /‾‾‾‾‾‾‾‾‾/'
-  '      /  @     @   /'
-  '     |      ^       |'
-  '     |     /█/      |'
-  '     |    / | /     |'
-  '     |   /  |  /    |'
-  '     |  |   |   |   |'
-  '      /|   |   |  /'
-  '       |   |   |  |'
-  '    ___|   |   |  |___'
-  '   /   |   |   |  |   /'
-  '  |   /       /   |    |'
-  '   / |         | /    /'
-  '    /|         |/    /'
-  '     |_________|    /'
-  '      /       /    /'
-  '     /‾‾‾‾‾‾‾‾‾//'
+# ── godzilla sprite (unicode block art, 24×39) ────────────────────────────────
+readonly -a ZILLA_SPRITE=(
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣤⡀⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣶⣿⣿⣿⡟⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣀⣀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⣦⣄⣤⣤⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣠⣤⣠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡟⠁⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣙⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡟⠀⠀⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢈⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠁⠀⠀⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣄⣀⣻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣏⠀⠀⠀⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣤⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡟⠀⠀⠀⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⡀⠀⠀⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣬⣝⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣄⠀⠀⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣬⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠋⠻⢿⣿⣿⣷⣄⠀⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣄⠀⠈⢻⣿⣿⡄⠀'
+  '⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡤⣼⣿⣿⣷⠀'
+  '⠀⠀⠀⠀⠀⢀⣴⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠉⠉⠁⠀'
+  '⠀⠀⠀⢀⣾⣿⣿⣿⣍⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠀'
+  '⠀⠀⣴⣿⣿⣿⣿⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡆⠀⠀'
+  '⢀⣠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠛⠛⣻⣿⣿⣿⣿⣿⣿⣿⠇⠀⠀'
+  '⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠏⠀⠀⠀⠀⠀⢹⣿⣿⣿⣿⣿⣿⡟⠀⠀⠀'
+  '⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠏⠁⠀⠀⠀⠀⠀⠀⠈⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀'
+  '⠀⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣧⣄⠀⠀'
+  '⠀⠀⠈⠻⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣷⡄'
+  '⠀⠀⠀⠀⠀⠀⠀⠸⣿⣿⣿⣿⣿⣿⣿⡿⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠉⠉⠉⠉⠉⠉⠁'
 )
 
-readonly -a ZILLA_WALK2=(
-  '       /‾‾‾‾‾‾‾‾‾/'
-  '      /  @     @   /'
-  '     |      ^       |'
-  '     |     /█/      |'
-  '     |    / | /     |'
-  '     |   /  |  /    |'
-  '     |  |   |   |   |'
-  '      /|   |   |  /'
-  '       |   |   |  |'
-  '    ___|   |   |  |___'
-  '   /   |   |   |  |   /'
-  '  |   /       /   |    |'
-  '   / |         | /    /'
-  '    /|         |/    /'
-  '     |_________|    /'
-  '      /  /     /   /'
-  '     /‾‾‾‾‾‾‾‾‾//'
-)
+readonly -a ZILLA_WALK1=("${ZILLA_SPRITE[@]}")
+readonly -a ZILLA_WALK2=("${ZILLA_SPRITE[@]}")
+readonly -a ZILLA_BREATH=("${ZILLA_SPRITE[@]}")
 
-readonly -a ZILLA_BREATH=(
-  '       /‾‾‾‾‾‾‾‾‾/'
-  '      /  @     @   /'
-  '     |    >█>~~~<   |'
-  '     |     /█/      |'
-  '     |    / | /     |'
-  '     |   /  |  /    |'
-  '     |  |   |   |   |'
-  '      /|   |   |  /'
-  '       |   |   |  |'
-  '    ___|   |   |  |___'
-  '   /   |   |   |  |   /'
-  '  |   /       /   |    |'
-  '   / |         | /    /'
-  '    /|         |/    /'
-  '     |_________|    /'
-  '      /       /    /'
-  '     /‾‾‾‾‾‾‾‾‾//'
-)
-
-readonly ZILLA_H=${#ZILLA_WALK1[@]}
+readonly ZILLA_H=${#ZILLA_SPRITE[@]}
 
 _sprite_width() {
   local -n _lines=$1
@@ -94,9 +65,8 @@ _sprite_width() {
   echo "$w"
 }
 
-readonly ZILLA_W=$(_sprite_width ZILLA_WALK1)
-readonly MOUTH_COL=12   # column offset from sprite origin to fire origin
-readonly MOUTH_ROW=3    # row offset (0-based) within sprite for fire beam
+readonly ZILLA_W=$(_sprite_width ZILLA_SPRITE)
+readonly MOUTH_COL=14   # column offset from sprite origin to fire origin (snout)
 
 SPEED=1
 FAST=0
@@ -118,10 +88,19 @@ EOF
 
 # ── terminal helpers ──────────────────────────────────────────────────────────
 get_dims() {
-  local size
-  size=$(stty size 2>/dev/null || echo "24 80")
-  TERM_ROWS=${size%% *}
-  TERM_COLS=${size##* }
+  local size rows cols
+  rows=0 cols=0
+  size=$(stty size 2>/dev/null || true)
+  if [[ -n "$size" ]]; then
+    rows=${size%% *}
+    cols=${size##* }
+  fi
+  (( rows < 1 )) && rows=${LINES:-$(tput lines 2>/dev/null || echo 24)}
+  (( cols < 1 )) && cols=${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
+  (( rows < 1 )) && rows=24
+  (( cols < 1 )) && cols=80
+  TERM_ROWS=$rows
+  TERM_COLS=$cols
 }
 
 get_content_lines() {
@@ -231,7 +210,7 @@ animate() {
 
     for ((x = 1; x <= TERM_COLS - ZILLA_W; x++)); do
       if (( toggle == 10 )); then
-        draw_sprite ZILLA_BREATH "$band_row" "$x" "$GREEN"
+        draw_sprite ZILLA_BREATH "$band_row" "$x"
         fire_col=$((x + MOUTH_COL))
         draw_fire_beam "$band_row" "$fire_col"
         frame_delay
@@ -240,9 +219,9 @@ animate() {
         toggle=0
       else
         if (( frame % 2 == 0 )); then
-          draw_sprite ZILLA_WALK1 "$band_row" "$x" "$GREEN"
+          draw_sprite ZILLA_WALK1 "$band_row" "$x"
         else
-          draw_sprite ZILLA_WALK2 "$band_row" "$x" "$GREEN"
+          draw_sprite ZILLA_WALK2 "$band_row" "$x"
         fi
         frame_delay
         erase_sprite "$band_row" "$x"
