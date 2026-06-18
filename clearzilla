@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.17"
+VERSION="0.3.18"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -75,11 +75,15 @@ readonly -a DEBRIS_CHARS=( '░' '▒' '▓' ':' '.' ',' '`' '~' '%' '#' '*' '+'
 readonly DEBRIS_MIN=2
 readonly DEBRIS_MAX=4
 readonly ENABLE_DEBRIS_ANIM=1
-readonly DEBRIS_ANIM_INTERVAL=6
-readonly DEBRIS_ANIM_TAIL=14
-readonly DEBRIS_ANIM_MAX=6    # cap particles redrawn per anim frame
-readonly DEBRIS_TRACK_MAX=120 # cap tracked sites for wake animation
-readonly DEBRIS_FADE_RATE=2   # previous-band clear runs at 1/N of Godzilla sweep rate
+readonly DEBRIS_ANIM_INTERVAL=3
+readonly DEBRIS_ANIM_TAIL=22
+readonly DEBRIS_ANIM_MAX=14   # cap particles redrawn per anim frame
+readonly DEBRIS_TRACK_MAX=240 # keep sites tracked until dissolved, not column-wiped
+readonly DEBRIS_DISSOLVE_STAGES=3
+readonly DEBRIS_DISSOLVE_RATE=5   # dissolve budget scales with Godzilla progress
+readonly DEBRIS_DISSOLVE_STEP_MAX=16
+readonly DEBRIS_DISSOLVE_FINISH_MAX=32
+readonly DEBRIS_DISSOLVE_DELAY_MS=10
 
 SPEED=1
 FAST=0
@@ -130,6 +134,12 @@ frame_delay() {
   local extra=${1:-0}
   local ms=$(( (40 + extra) / SPEED ))
   (( ms < 3 )) && ms=3
+  sleep "0.$(printf '%03d' "$ms")"
+}
+
+debris_dissolve_delay() {
+  local ms=$(( DEBRIS_DISSOLVE_DELAY_MS / SPEED ))
+  (( ms < 2 )) && ms=2
   sleep "0.$(printf '%03d' "$ms")"
 }
 
@@ -203,101 +213,167 @@ draw_debris_particle() {
 }
 
 prune_debris_tracking() {
-  local band_row=$1 band_x=$2
-  local tail_start=$(( band_x - DEBRIS_ANIM_TAIL ))
-  local -a kept=()
-  local site r c seed site_band
-  (( tail_start < 1 )) && tail_start=1
-  for site in "${DEBRIS_SITES[@]}"; do
-    read -r r c seed site_band <<< "$site"
-    if (( site_band == band_row && (c < tail_start || c >= band_x) )); then
-      continue
-    fi
-    kept+=( "$site" )
-  done
-  DEBRIS_SITES=( "${kept[@]}" )
   while (( ${#DEBRIS_SITES[@]} > DEBRIS_TRACK_MAX )); do
     DEBRIS_SITES=( "${DEBRIS_SITES[@]:1}" )
   done
 }
 
-# Smolder a tiny random subset of wake debris (hard-capped redraws per frame).
+debris_dissolve_glyph() {
+  local seed=$1 stage=$2 tick=$3
+  case "$stage" in
+    0) debris_glyph "$seed" "$tick" ;;
+    1)
+      case $(((seed + tick) % 4)) in
+        0) printf '.' ;;
+        1) printf ',' ;;
+        2) printf ':' ;;
+        *) printf '`' ;;
+      esac
+      ;;
+    2)
+      case $(((seed + tick) % 3)) in
+        0) printf '.' ;;
+        1) printf ' ' ;;
+        *) printf ',' ;;
+      esac
+      ;;
+    *)
+      printf ' '
+      ;;
+  esac
+}
+
+debris_dissolve_color() {
+  local seed=$1 stage=$2 tick=$3
+  case "$stage" in
+    0) debris_color "$seed" "$tick" ;;
+    1) printf '%s' "$ASH" ;;
+    2) printf '%s' "$RUBBLE" ;;
+    *) printf '%s' "$RESET" ;;
+  esac
+}
+
+draw_debris_dissolve() {
+  local r=$1 c=$2 seed=$3 stage=$4 tick=${5:-0}
+  local ch color
+  move_to "$r" "$c"
+  ch=$(debris_dissolve_glyph "$seed" "$stage" "$tick")
+  color=$(debris_dissolve_color "$seed" "$stage" "$tick")
+  if (( stage >= DEBRIS_DISSOLVE_STAGES )); then
+    printf '%b %b' "$RESET" "$RESET"
+  else
+    printf '%b%s%b' "$color" "$ch" "$RESET"
+  fi
+}
+
+count_band_debris() {
+  local band_row=$1
+  local site site_band count=0
+  for site in "${DEBRIS_SITES[@]}"; do
+    read -r _ _ _ site_band _ <<< "$site"
+    (( site_band == band_row )) && ((count++)) || true
+  done
+  echo "$count"
+}
+
+# Smolder wake debris and any band ash still cooling down.
 animate_debris_wake() {
   local tick=$1 band_row=$2 band_x=$3 band_h=$4
-  local site r c seed site_band tail_start ch color animated=0
+  local site r c seed site_band stage tail_start ch color animated=0
   tail_start=$(( band_x - DEBRIS_ANIM_TAIL ))
   (( tail_start < 1 )) && tail_start=1
 
   for site in "${DEBRIS_SITES[@]}"; do
     (( animated >= DEBRIS_ANIM_MAX )) && break
-    read -r r c seed site_band <<< "$site"
+    read -r r c seed site_band stage <<< "$site"
+    stage=${stage:-0}
     (( site_band != band_row )) && continue
     (( r < band_row || r >= band_row + band_h )) && continue
-    (( c >= band_x || c < tail_start )) && continue
-    (( (seed + tick) % 3 != 0 )) && continue
-    ch=$(debris_glyph "$seed" "$tick")
+    if (( stage == 0 )); then
+      (( c >= band_x || c < tail_start )) && continue
+      (( (seed + tick) % 2 != 0 )) && continue
+    else
+      (( (seed + tick + stage) % 2 != 0 )) && continue
+    fi
+    ch=$(debris_dissolve_glyph "$seed" "$stage" "$tick")
     move_to "$r" "$c"
-    color=$(debris_color "$seed" "$tick")
+    color=$(debris_dissolve_color "$seed" "$stage" "$tick")
     printf '%b%s%b' "$color" "$ch" "$RESET"
     ((animated++)) || true
   done
 }
 
-remove_band_debris_up_to() {
-  local band_row=$1 clear_to_col=$2
-  local -a kept=()
-  local site r c seed site_band
-  for site in "${DEBRIS_SITES[@]}"; do
-    read -r r c seed site_band <<< "$site"
-    if (( site_band == band_row && c <= clear_to_col )); then
-      continue
-    fi
-    kept+=( "$site" )
+# Gracefully dissolve debris in random pockets — not a Godzilla-style column sweep.
+dissolve_band_debris_batch() {
+  local band_row=$1 band_h=$2 budget=$3 tick=$4
+  local -a band_idxs=()
+  local idx site r c seed site_band stage next_stage
+  local dissolved=0 start_idx pick
+
+  (( budget < 1 )) && return 0
+
+  for idx in "${!DEBRIS_SITES[@]}"; do
+    read -r _ _ _ site_band _ <<< "${DEBRIS_SITES[$idx]}"
+    (( site_band == band_row )) && band_idxs+=( "$idx" )
   done
-  DEBRIS_SITES=( "${kept[@]}" )
+  (( ${#band_idxs[@]} == 0 )) && return 0
+
+  start_idx=$(( (tick * 17 + band_row * 13) % ${#band_idxs[@]} ))
+  for ((pick = 0; pick < ${#band_idxs[@]} && dissolved < budget; pick++)); do
+    idx=${band_idxs[$(( (start_idx + pick * 7) % ${#band_idxs[@]} ))]}
+    read -r r c seed site_band stage <<< "${DEBRIS_SITES[$idx]}"
+    stage=${stage:-0}
+    (( r < band_row || r >= band_row + band_h )) && continue
+    next_stage=$(( stage + 1 ))
+    draw_debris_dissolve "$r" "$c" "$seed" "$next_stage" "$tick"
+    if (( next_stage >= DEBRIS_DISSOLVE_STAGES )); then
+      unset "DEBRIS_SITES[$idx]"
+    else
+      DEBRIS_SITES[$idx]="$r $c $seed $site_band $next_stage"
+    fi
+    ((dissolved++)) || true
+  done
+
+  if (( dissolved > 0 )); then
+    DEBRIS_SITES=( "${DEBRIS_SITES[@]}" )
+  fi
 }
 
-# Erase any tracked debris still on screen (e.g. pruned from animation tail).
+dissolve_step_budget() {
+  local x=$1 max_x=$2
+  local budget=$(( (x * DEBRIS_DISSOLVE_STEP_MAX * DEBRIS_DISSOLVE_RATE) / max_x ))
+  (( budget < 2 )) && budget=2
+  (( budget > DEBRIS_DISSOLVE_STEP_MAX )) && budget=$DEBRIS_DISSOLVE_STEP_MAX
+  echo "$budget"
+}
+
+finish_band_dissolve() {
+  local band_row=$1 band_h=$2
+  local tick=0 remaining budget
+  while true; do
+    remaining=$(count_band_debris "$band_row")
+    (( remaining == 0 )) && break
+    (( tick > 512 )) && break
+    ((tick++)) || true
+    if (( ENABLE_DEBRIS_ANIM )); then
+      animate_debris_wake "$tick" "$band_row" "$TERM_COLS" "$band_h"
+    fi
+    budget=$DEBRIS_DISSOLVE_FINISH_MAX
+    (( remaining < budget )) && budget=$remaining
+    dissolve_band_debris_batch "$band_row" "$band_h" "$budget" "$tick"
+    debris_dissolve_delay
+  done
+}
+
+# Erase any tracked debris still on screen after dissolve passes.
 wipe_tracked_debris_sites() {
-  local site r c seed site_band
+  local site r c seed site_band stage
   for site in "${DEBRIS_SITES[@]}"; do
-    read -r r c seed site_band <<< "$site"
+    read -r r c seed site_band stage <<< "$site"
     move_to "$r" "$c"
     printf '%b %b' "$RESET" "$RESET"
   done
   DEBRIS_SITES=()
-}
-
-# Wipe the previous band left-to-right as Godzilla advances on the next pass.
-# Arg 4 is the *name* of the caller's last-cleared column variable.
-fade_previous_band() {
-  local prev_row=$1 prev_h=$2 clear_to_col=$3 last_clear_var=$4
-  local last_clear="${!last_clear_var}"
-  local c i
-  (( clear_to_col <= last_clear )) && return 0
-  for ((c = last_clear + 1; c <= clear_to_col; c++)); do
-    for ((i = 0; i < prev_h; i++)); do
-      move_to $((prev_row + i)) "$c"
-      printf '%b %b' "$RESET" "$RESET"
-    done
-  done
-  remove_band_debris_up_to "$prev_row" "$clear_to_col"
-  printf -v "$last_clear_var" '%d' "$clear_to_col"
-}
-
-# Finish clearing the previous band at the same half-rate after Godzilla completes a pass.
-finish_previous_band_fade() {
-  local prev_row=$1 prev_h=$2 last_clear_var=$3 stride=$4 max_x=$5
-  local last_clear="${!last_clear_var}" chunk target
-  chunk=$(( (stride * TERM_COLS) / (DEBRIS_FADE_RATE * max_x) ))
-  (( chunk < 1 )) && chunk=1
-  while (( last_clear < TERM_COLS )); do
-    target=$(( last_clear + chunk ))
-    (( target > TERM_COLS )) && target=$TERM_COLS
-    fade_previous_band "$prev_row" "$prev_h" "$target" "$last_clear_var"
-    last_clear="${!last_clear_var}"
-    frame_delay
-  done
 }
 
 scatter_debris_in_zone() {
@@ -312,7 +388,7 @@ scatter_debris_in_zone() {
     c=$(( col_start + RANDOM % zone_w ))
     seed=$(( RANDOM * 997 + r * 31 + c * 17 + i * 13 ))
     if (( ENABLE_DEBRIS_ANIM )); then
-      DEBRIS_SITES+=( "$r $c $seed $band_row" )
+      DEBRIS_SITES+=( "$r $c $seed $band_row 0" )
     fi
     draw_debris_particle "$r" "$c" "$seed" "$tick"
   done
@@ -401,8 +477,8 @@ animate() {
   (( diff_y < 0 )) && diff_y=0
 
   local y x frame=0 toggle=0 stride max_x walk_step=0 debris_tick=0
-  local fire_col band_row band_h prev_band_row prev_band_h prev_clear=0
-  local last_band_row=1 last_band_h=$ZILLA_H clear_to
+  local fire_col band_row band_h prev_band_row prev_band_h dissolve_budget
+  local last_band_row=1 last_band_h=$ZILLA_H
 
   stride=$(walk_stride)
   max_x=$(( TERM_COLS - ZILLA_W ))
@@ -416,7 +492,6 @@ animate() {
     band_h=$(band_height "$band_row")
     last_band_row=$band_row
     last_band_h=$band_h
-    prev_clear=0
     if (( y > 0 )); then
       prev_band_row=$(( band_row - ZILLA_H ))
       prev_band_h=$(band_height "$prev_band_row")
@@ -426,9 +501,11 @@ animate() {
       ((walk_step++)) || true
 
       if (( y > 0 )); then
-        clear_to=$(( (x * TERM_COLS) / (DEBRIS_FADE_RATE * max_x) ))
-        (( clear_to < 1 )) && clear_to=1
-        fade_previous_band "$prev_band_row" "$prev_band_h" "$clear_to" prev_clear
+        if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
+          animate_debris_wake "$debris_tick" "$prev_band_row" "$TERM_COLS" "$prev_band_h"
+        fi
+        dissolve_budget=$(dissolve_step_budget "$x" "$max_x")
+        dissolve_band_debris_batch "$prev_band_row" "$prev_band_h" "$dissolve_budget" "$debris_tick"
       fi
 
       if (( ENABLE_FIRE && toggle == 10 )); then
@@ -456,13 +533,12 @@ animate() {
     scatter_pass_tail "$band_row" "$max_x" "$stride" "$band_h" "$debris_tick"
 
     if (( y > 0 )); then
-      finish_previous_band_fade "$prev_band_row" "$prev_band_h" prev_clear "$stride" "$max_x"
+      finish_band_dissolve "$prev_band_row" "$prev_band_h"
     fi
   done
 
-  # The last swept band never gets a following pass to fade it — finish that fade.
-  prev_clear=0
-  finish_previous_band_fade "$last_band_row" "$last_band_h" prev_clear "$stride" "$max_x"
+  # The last swept band never gets a following pass — dissolve its ash pocket by pocket.
+  finish_band_dissolve "$last_band_row" "$last_band_h"
   wipe_tracked_debris_sites
 
   printf '%s' "$SHOW_CURSOR"
