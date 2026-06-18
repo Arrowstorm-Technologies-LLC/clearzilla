@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-VERSION="0.4.2"
+VERSION="0.5.0"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -27,12 +27,28 @@ else
 fi
 
 # ── godzilla head — wide right-facing profile, flush left ───────────────────
-readonly -a ZILLA_HEAD=(
+# Mouth closed (idle) — enlarged eye, jaw shut
+readonly -a ZILLA_HEAD_CLOSED=(
   '/|/|/|/|/|'
   '|             /'
   '| .-----------. /'
-  '|/      @       /'
-  '||       \        /'
+  '|/  (  @  )      /'
+  '||       \         /'
+  '||        \________/|'
+  '| \      /######### |'
+  '|  |    |■■□□□□□□■■|'
+  '|  |     /########/ |'
+  '|   \        ‾‾‾‾‾‾‾/|'
+  '|    |_______________|'
+)
+
+# Mouth open (breathing fire) — identical frame, jaw dropped
+readonly -a ZILLA_HEAD_OPEN=(
+  '/|/|/|/|/|'
+  '|             /'
+  '| .-----------. /'
+  '|/  (  @  )      /'
+  '||       \         /'
   '||        \________>)'
   '| \      /#########>>'
   '|  |    |>■□□□□□□■<|'
@@ -41,7 +57,7 @@ readonly -a ZILLA_HEAD=(
   '|    |_______________|'
 )
 
-readonly HEAD_H=${#ZILLA_HEAD[@]}
+readonly HEAD_H=${#ZILLA_HEAD_CLOSED[@]}
 
 _sprite_width() {
   local -n _lines=$1
@@ -53,7 +69,14 @@ _sprite_width() {
   echo "$w"
 }
 
-readonly HEAD_W=$(_sprite_width ZILLA_HEAD)
+_sprite_max_width() {
+  local w1 w2
+  w1=$(_sprite_width "$1")
+  w2=$(_sprite_width "$2")
+  (( w1 > w2 )) && echo "$w1" || echo "$w2"
+}
+
+readonly HEAD_W=$(_sprite_max_width ZILLA_HEAD_CLOSED ZILLA_HEAD_OPEN)
 # Mouth on the right side of the head sprite (0-based offsets)
 readonly MOUTH_ROW_OFF=6
 readonly MOUTH_COL_OFF=$(( HEAD_W - 2 ))
@@ -124,11 +147,22 @@ clear_screen() {
 }
 
 draw_head() {
-  local top_row=$1
-  local i=0
-  for line in "${ZILLA_HEAD[@]}"; do
+  local top_row=$1 mouth_open=$2
+  local -n lines
+  if (( mouth_open )); then
+    lines=ZILLA_HEAD_OPEN
+  else
+    lines=ZILLA_HEAD_CLOSED
+  fi
+  local i=0 blank
+  blank=$(printf '%*s' "$HEAD_W" '')
+  for line in "${lines[@]}"; do
     move_to $((top_row + i)) 1
     printf '%b%s%b' "$GREEN" "$line" "$RESET"
+    # Erase any tail from the previous frame's wider mouth lines
+    if ((${#line} < HEAD_W)); then
+      printf '%*s' $((HEAD_W - ${#line})) ''
+    fi
     ((i++)) || true
   done
 }
@@ -194,10 +228,13 @@ animate() {
   local reach frame=0 col row dist spread row_off d
   local burn_start=$(( mouth_col + 1 ))
 
+  local breathing=0
+
   printf '%s' "$HIDE_CURSOR"
-  draw_head "$head_row"
+  draw_head "$head_row" 0
 
   for ((reach = 1; reach <= max_reach; reach++)); do
+    breathing=1
     local front_col=$(( mouth_col + reach ))
 
     # Scorch trail — columns the flame has already passed
@@ -268,10 +305,14 @@ animate() {
       fi
     fi
 
-    draw_head "$head_row"
+    draw_head "$head_row" "$breathing"
     frame_delay
     ((frame++)) || true
   done
+
+  # Snap jaw shut, then burn remaining fan area
+  draw_head "$head_row" 0
+  frame_delay
 
   # Burn remaining fan area, then reset
   for ((d = 1; d <= max_reach; d++)); do
