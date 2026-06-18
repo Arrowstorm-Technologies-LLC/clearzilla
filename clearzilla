@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.15"
+VERSION="0.3.16"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -446,6 +446,13 @@ animate() {
       finish_previous_band_fade "$prev_band_row" "$prev_band_h" prev_clear "$stride" "$max_x"
     fi
   done
+
+  # The final band never gets a following pass to fade it — sweep it clear first.
+  band_row=$(( diff_y + 1 ))
+  band_h=$(band_height "$band_row")
+  prev_clear=0
+  finish_previous_band_fade "$band_row" "$band_h" prev_clear "$stride" "$max_x"
+  DEBRIS_SITES=()
 
   printf '%s' "$SHOW_CURSOR"
   clear_screen
