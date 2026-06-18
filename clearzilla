@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.16"
+VERSION="0.3.17"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -257,6 +257,17 @@ remove_band_debris_up_to() {
   DEBRIS_SITES=( "${kept[@]}" )
 }
 
+# Erase any tracked debris still on screen (e.g. pruned from animation tail).
+wipe_tracked_debris_sites() {
+  local site r c seed site_band
+  for site in "${DEBRIS_SITES[@]}"; do
+    read -r r c seed site_band <<< "$site"
+    move_to "$r" "$c"
+    printf '%b %b' "$RESET" "$RESET"
+  done
+  DEBRIS_SITES=()
+}
+
 # Wipe the previous band left-to-right as Godzilla advances on the next pass.
 # Arg 4 is the *name* of the caller's last-cleared column variable.
 fade_previous_band() {
@@ -267,7 +278,7 @@ fade_previous_band() {
   for ((c = last_clear + 1; c <= clear_to_col; c++)); do
     for ((i = 0; i < prev_h; i++)); do
       move_to $((prev_row + i)) "$c"
-      printf ' '
+      printf '%b %b' "$RESET" "$RESET"
     done
   done
   remove_band_debris_up_to "$prev_row" "$clear_to_col"
@@ -391,7 +402,7 @@ animate() {
 
   local y x frame=0 toggle=0 stride max_x walk_step=0 debris_tick=0
   local fire_col band_row band_h prev_band_row prev_band_h prev_clear=0
-  local clear_to
+  local last_band_row=1 last_band_h=$ZILLA_H clear_to
 
   stride=$(walk_stride)
   max_x=$(( TERM_COLS - ZILLA_W ))
@@ -403,6 +414,8 @@ animate() {
   for ((y = 0; y <= diff_y; y += ZILLA_H)); do
     band_row=$((y + 1))
     band_h=$(band_height "$band_row")
+    last_band_row=$band_row
+    last_band_h=$band_h
     prev_clear=0
     if (( y > 0 )); then
       prev_band_row=$(( band_row - ZILLA_H ))
@@ -447,12 +460,10 @@ animate() {
     fi
   done
 
-  # The final band never gets a following pass to fade it — sweep it clear first.
-  band_row=$(( diff_y + 1 ))
-  band_h=$(band_height "$band_row")
+  # The last swept band never gets a following pass to fade it — finish that fade.
   prev_clear=0
-  finish_previous_band_fade "$band_row" "$band_h" prev_clear "$stride" "$max_x"
-  DEBRIS_SITES=()
+  finish_previous_band_fade "$last_band_row" "$last_band_h" prev_clear "$stride" "$max_x"
+  wipe_tracked_debris_sites
 
   printf '%s' "$SHOW_CURSOR"
   clear_screen
