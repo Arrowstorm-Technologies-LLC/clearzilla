@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-VERSION="0.5.1"
+VERSION="0.6.0"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -42,19 +42,19 @@ readonly -a ZILLA_HEAD_CLOSED=(
   '|    |_______________|'
 )
 
-# Mouth open (breathing fire) — jaw dropped, teeth parted, maw agape
+# Mouth open (breathing fire) — head tilted back, lower jaw dropped (pac-man hinge)
 readonly -a ZILLA_HEAD_OPEN=(
-  '/|/|/|/|/|'
-  '|             /'
-  '| .-----------. /'
-  '|/  (  @  )      /'
-  '||       \         /'
-  '||        \        |'
-  '|       /██    ████>>'
-  '|      |>■      ■<|'
-  '|       \██    ███/|'
-  '|   \         \____/|'
-  '|    |_______________|'
+  ' /|/|/|/|/|'
+  '|            /'
+  '| .----------. /'
+  '|/  (  @  )     /'
+  '||      \_______/'
+  '|            /'
+  '|    /██     ████>>'
+  '|   |>■       ■<|'
+  '|    \██     ███/|'
+  '|      \_________|'
+  '|   |____________|'
 )
 
 readonly HEAD_H=${#ZILLA_HEAD_CLOSED[@]}
@@ -77,9 +77,11 @@ _sprite_max_width() {
 }
 
 readonly HEAD_W=$(_sprite_max_width ZILLA_HEAD_CLOSED ZILLA_HEAD_OPEN)
-# Mouth on the right side of the head sprite (0-based offsets)
-readonly MOUTH_ROW_OFF=6
-readonly MOUTH_COL_OFF=$(( HEAD_W - 2 ))
+# Mouth emitter offsets within each sprite (0-based row, column from col 1)
+readonly MOUTH_ROW_CLOSED=6
+readonly MOUTH_COL_CLOSED=20
+readonly MOUTH_ROW_OPEN=6
+readonly MOUTH_COL_OPEN=18
 
 SPEED=1
 FAST=0
@@ -227,27 +229,27 @@ animate() {
     head_row=$(( TERM_ROWS - HEAD_H + 1 ))
   fi
 
-  local mouth_row=$(( head_row + MOUTH_ROW_OFF ))
-  local mouth_col=$(( 1 + MOUTH_COL_OFF ))
+  local mouth_row mouth_col max_spread max_reach reach frame=0
+  local col row dist spread row_off d burn_start front_col
+  local breathing=0
 
   local max_spread=$(( CONTENT_LINES / 2 + 1 ))
   (( max_spread < 3 )) && max_spread=3
   (( max_spread > TERM_ROWS / 2 )) && max_spread=$(( TERM_ROWS / 2 ))
 
-  local max_reach=$(( TERM_COLS - mouth_col ))
+  # Fire erupts from the tilted-back open mouth position
+  mouth_row=$(( head_row + MOUTH_ROW_OPEN ))
+  mouth_col=$MOUTH_COL_OPEN
+  max_reach=$(( TERM_COLS - mouth_col ))
   (( max_reach < 1 )) && max_reach=1
-
-  local reach frame=0 col row dist spread row_off d
-  local burn_start=$(( mouth_col + 1 ))
-
-  local breathing=0
+  burn_start=$(( mouth_col + 1 ))
 
   printf '%s' "$HIDE_CURSOR"
   draw_head "$head_row" 0
 
   for ((reach = 1; reach <= max_reach; reach++)); do
     breathing=1
-    local front_col=$(( mouth_col + reach ))
+    front_col=$(( mouth_col + reach ))
 
     # Scorch trail — columns the flame has already passed
     for ((d = 1; d < reach; d++)); do
