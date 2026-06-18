@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-VERSION="0.5.0"
+VERSION="0.5.1"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -27,33 +27,33 @@ else
 fi
 
 # ── godzilla head — wide right-facing profile, flush left ───────────────────
-# Mouth closed (idle) — enlarged eye, jaw shut
+# Mouth closed (idle) — enlarged eye, lips sealed shut
 readonly -a ZILLA_HEAD_CLOSED=(
   '/|/|/|/|/|'
   '|             /'
   '| .-----------. /'
   '|/  (  @  )      /'
   '||       \         /'
-  '||        \________/|'
-  '| \      /######### |'
-  '|  |    |■■□□□□□□■■|'
-  '|  |     /########/ |'
-  '|   \        ‾‾‾‾‾‾‾/|'
+  '||        \════════|'
+  '| \      /█████████|'
+  '|  |    |══■■■■■══|'
+  '|  |     \█████████|'
+  '|   \        ‾‾‾‾‾‾‾|'
   '|    |_______________|'
 )
 
-# Mouth open (breathing fire) — identical frame, jaw dropped
+# Mouth open (breathing fire) — jaw dropped, teeth parted, maw agape
 readonly -a ZILLA_HEAD_OPEN=(
   '/|/|/|/|/|'
   '|             /'
   '| .-----------. /'
   '|/  (  @  )      /'
   '||       \         /'
-  '||        \________>)'
-  '| \      /#########>>'
-  '|  |    |>■□□□□□□■<|'
-  '|  |     /#########/|'
-  '|   \        ‾‾‾‾‾‾‾/|'
+  '||        \        |'
+  '|       /██    ████>>'
+  '|      |>■      ■<|'
+  '|       \██    ███/|'
+  '|   \         \____/|'
   '|    |_______________|'
 )
 
@@ -146,25 +146,37 @@ clear_screen() {
   printf '\033[2J\033[H'
 }
 
+erase_head() {
+  local top_row=$1
+  local blank i
+  blank=$(printf '%*s' "$HEAD_W" '')
+  for ((i = 0; i < HEAD_H; i++)); do
+    move_to $((top_row + i)) 1
+    printf '%s' "$blank"
+  done
+}
+
 draw_head() {
   local top_row=$1 mouth_open=$2
-  local -n lines
+  local i=0 line
+
+  erase_head "$top_row"
+
   if (( mouth_open )); then
-    lines=ZILLA_HEAD_OPEN
+    for line in "${ZILLA_HEAD_OPEN[@]}"; do
+      move_to $((top_row + i)) 1
+      printf '%b%s%b' "$GREEN" "$line" "$RESET"
+      ((${#line} < HEAD_W)) && printf '%*s' $((HEAD_W - ${#line})) ''
+      ((i++)) || true
+    done
   else
-    lines=ZILLA_HEAD_CLOSED
+    for line in "${ZILLA_HEAD_CLOSED[@]}"; do
+      move_to $((top_row + i)) 1
+      printf '%b%s%b' "$GREEN" "$line" "$RESET"
+      ((${#line} < HEAD_W)) && printf '%*s' $((HEAD_W - ${#line})) ''
+      ((i++)) || true
+    done
   fi
-  local i=0 blank
-  blank=$(printf '%*s' "$HEAD_W" '')
-  for line in "${lines[@]}"; do
-    move_to $((top_row + i)) 1
-    printf '%b%s%b' "$GREEN" "$line" "$RESET"
-    # Erase any tail from the previous frame's wider mouth lines
-    if ((${#line} < HEAD_W)); then
-      printf '%*s' $((HEAD_W - ${#line})) ''
-    fi
-    ((i++)) || true
-  done
 }
 
 # Cone half-width grows as flame travels right from the mouth
