@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.20"
+VERSION="0.3.21"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -513,11 +513,8 @@ clear_screen() {
 animate() {
   get_dims
 
-  local diff_y=$(( TERM_ROWS - ZILLA_H ))
-  (( diff_y < 0 )) && diff_y=0
-
-  local y x frame=0 toggle=0 stride max_x walk_step=0 debris_tick=0
-  local fire_col band_row band_h prev_band_row prev_band_h dissolve_budget
+  local x frame=0 toggle=0 stride max_x walk_step=0 debris_tick=0
+  local fire_col band_row band_h prev_band_row=0 prev_band_h=0 dissolve_budget
   local last_band_row=1 last_band_h=$ZILLA_H
 
   stride=$(walk_stride)
@@ -527,22 +524,17 @@ animate() {
   DEBRIS_SITES=()
   printf '%s' "$HIDE_CURSOR"
 
-  for ((y = 0; y <= diff_y; y += ZILLA_H)); do
-    band_row=$((y + 1))
+  for ((band_row = 1; band_row <= TERM_ROWS; band_row += ZILLA_H)); do
     band_h=$(band_height "$band_row")
     last_band_row=$band_row
     last_band_h=$band_h
-    if (( y > 0 )); then
-      prev_band_row=$(( band_row - ZILLA_H ))
-      prev_band_h=$(band_height "$prev_band_row")
-    fi
 
     for ((x = 1; x <= max_x; x += stride)); do
       ((walk_step++)) || true
 
       if (( ENABLE_FIRE && toggle == 10 )); then
         draw_sprite ZILLA_BREATH "$band_row" "$x" "$band_h"
-        if (( ENABLE_DEBRIS && y > 0 )); then
+        if (( ENABLE_DEBRIS && prev_band_row > 0 )); then
           if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
             animate_debris_wake "$debris_tick" "$prev_band_row" "$TERM_COLS" "$prev_band_h" \
               "$band_row" "$x" "$band_h"
@@ -560,7 +552,7 @@ animate() {
       else
         draw_sprite ZILLA_WALK1 "$band_row" "$x" "$band_h"
         if (( ENABLE_DEBRIS )); then
-          if (( y > 0 )); then
+          if (( prev_band_row > 0 )); then
             if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
               animate_debris_wake "$debris_tick" "$prev_band_row" "$TERM_COLS" "$prev_band_h" \
                 "$band_row" "$x" "$band_h"
@@ -585,10 +577,12 @@ animate() {
 
     if (( ENABLE_DEBRIS )); then
       scatter_pass_tail "$band_row" "$max_x" "$stride" "$band_h" "$debris_tick"
-      if (( y > 0 )); then
+      if (( prev_band_row > 0 )); then
         finish_band_dissolve "$prev_band_row" "$prev_band_h"
       fi
     fi
+    prev_band_row=$band_row
+    prev_band_h=$band_h
   done
 
   if (( ENABLE_DEBRIS )); then
