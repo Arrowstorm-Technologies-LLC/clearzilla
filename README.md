@@ -51,13 +51,15 @@ Pipe and non-TTY contexts automatically fall back to an instant clear (no animat
 
 ## How it works
 
+Like [paclear](https://github.com/orangekame3/paclear), Godzilla is a tall multi-line sprite (17 rows) that sweeps the terminal in horizontal bands:
+
 1. Detects terminal size and how many lines of content are on screen (via cursor position).
-2. Divides that content into horizontal bands.
-3. Godzilla walks each band left-to-right, alternating walk frames.
-4. Periodically stops to breathe fire, scorching lines to the right edge.
+2. Steps down the screen in bands equal to Godzilla's height.
+3. Each band: Godzilla walks left-to-right across the full width, clearing that entire band before moving to the next.
+4. Every 10 steps, Godzilla breathes fire — scorching the rest of the band to the right edge.
 5. Finishes with a full terminal reset.
 
-More lines on screen → more bands → more fire-breath stops → longer animation.
+More lines on screen → more bands to sweep → longer rampage.
 
 ## Requirements
 
