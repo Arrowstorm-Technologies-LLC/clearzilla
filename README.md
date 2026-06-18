@@ -2,7 +2,7 @@
 
 `clear` is boring. `paclear` gave us Pac-Man. clearzilla gives you Godzilla.
 
-Type `clearzilla` and an ASCII Godzilla stomps into your terminal, fire-breathing away every line of on-screen content before leaving you with a clean slate. The rampage scales with how much is actually on screen — a few lines gets a quick blast; a full scrollback session gets the full kaiju treatment.
+Type `clearzilla` and a Unicode block-art Godzilla stomps across your terminal, sweeping the screen band by band before a final reset leaves you with a clean slate. Taller terminals get more passes — Godzilla keeps marching until every row has been stomped.
 
 Zero dependencies. One Bash script. No build step.
 
@@ -25,7 +25,7 @@ Make sure `~/.local/bin` is in your PATH:
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc
 ```
 
-Or install via [rack](https://github.com/Arrowstorm-Technologies-LLC/rack) once a release is published:
+Or install via [rack](https://github.com/Arrowstorm-Technologies-LLC/rack):
 
 ```sh
 rack clearzilla Arrowstorm-Technologies-LLC/clearzilla
@@ -51,21 +51,23 @@ Pipe and non-TTY contexts automatically fall back to an instant clear (no animat
 
 ## How it works
 
-Like [paclear](https://github.com/orangekame3/paclear), Godzilla is a tall multi-line sprite (17 rows) that sweeps the terminal in horizontal bands:
+Inspired by [paclear](https://github.com/orangekame3/paclear), clearzilla uses a tall multi-line Godzilla sprite (24 rows) that sweeps the terminal in horizontal bands:
 
-1. Detects terminal size and how many lines of content are on screen (via cursor position).
-2. Steps down the screen in bands equal to Godzilla's height.
-3. Each band: Godzilla walks left-to-right across the full width, clearing that entire band before moving to the next.
-4. Every 10 steps, Godzilla breathes fire — scorching the rest of the band to the right edge.
-5. Finishes with a full terminal reset.
+1. Reads terminal dimensions via `stty` / `tput`.
+2. Steps down the screen in bands, continuing until every row has been covered (including any partial band at the bottom).
+3. Each band: Godzilla walks left-to-right, erasing the sprite footprint as it moves.
+4. Finishes with a full terminal reset (`clear`).
 
-More lines on screen → more bands to sweep → longer rampage.
+More terminal rows → more bands to sweep → longer rampage.
+
+Fire-breath and ash-debris effects are implemented but currently disabled in the shipped script — the walk-and-stomp sweep plus the final reset is what runs today.
 
 ## Requirements
 
 - Bash 4+
-- A terminal that understands ANSI escape sequences (basically all of them)
-- `stty` and `tput` (standard on any Linux/macOS system)
+- A UTF-8 locale (for the block-art sprite)
+- A terminal that understands ANSI escape sequences
+- `stty` and `tput` (standard on Linux and macOS)
 
 ## License
 
