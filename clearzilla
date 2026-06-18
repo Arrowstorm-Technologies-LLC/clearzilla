@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.3"
+VERSION="0.3.4"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -83,7 +83,7 @@ ${BOLD}Usage:${RESET}
   clearzilla ${YELLOW}-h${RESET}                   Show this help
   clearzilla ${YELLOW}-v${RESET}                   Show version
 
-Animation length scales with how much content is on screen.
+Godzilla sweeps the visible terminal band by band until clear.
 EOF
 }
 
@@ -106,22 +106,12 @@ get_dims() {
   TERM_COLS=$cols
 }
 
-get_content_lines() {
-  local row=0
-  if [[ -t 1 ]] && exec 3<>/dev/tty 2>/dev/null; then
-    printf '\033[6n' >&3
-    IFS=';' read -rsd R -t 0.05 _ row <&3 2>/dev/null || true
-    exec 3>&-
-  fi
-  if [[ -z "$row" || "$row" -eq 0 ]]; then
-    row=$TERM_ROWS
-  fi
-  if (( row < ZILLA_H )); then
-    row=$ZILLA_H
-  elif (( row > TERM_ROWS )); then
-    row=$TERM_ROWS
-  fi
-  CONTENT_LINES=$row
+band_height() {
+  local band_row=$1
+  local h=$(( TERM_ROWS - band_row + 1 ))
+  (( h > ZILLA_H )) && h=$ZILLA_H
+  (( h < 1 )) && h=1
+  echo "$h"
 }
 
 frame_delay() {
@@ -149,8 +139,10 @@ move_to() {
 draw_sprite() {
   local -n lines=$1
   local row=$2 col=$3
+  local h=${4:-$ZILLA_H}
   local i=0
   for line in "${lines[@]}"; do
+    (( i >= h )) && break
     move_to $((row + i)) "$col"
     printf '%s' "$line"
     ((i++)) || true
@@ -159,10 +151,11 @@ draw_sprite() {
 
 erase_sprite() {
   local row=$1 col=$2
+  local h=${3:-$ZILLA_H}
   local blank
   blank=$(printf '%*s' "$ZILLA_W" '')
   local i
-  for ((i = 0; i < ZILLA_H; i++)); do
+  for ((i = 0; i < h; i++)); do
     move_to $((row + i)) "$col"
     printf '%s' "$blank"
   done
@@ -170,12 +163,13 @@ erase_sprite() {
 
 draw_fire_beam() {
   local band_row=$1 col=$2
+  local h=${3:-$ZILLA_H}
   local fire_len=$((TERM_COLS - col + 1))
   local i j
   if (( fire_len <= 0 )); then
     return
   fi
-  for ((i = 0; i < ZILLA_H; i++)); do
+  for ((i = 0; i < h; i++)); do
     move_to $((band_row + i)) "$col"
     for ((j = 0; j < fire_len; j++)); do
       case $((j % 4)) in
@@ -190,12 +184,13 @@ draw_fire_beam() {
 
 scorch_band_right() {
   local band_row=$1 col=$2
+  local h=${3:-$ZILLA_H}
   local fire_len=$((TERM_COLS - col + 1))
   local i
   if (( fire_len <= 0 )); then
     return
   fi
-  for ((i = 0; i < ZILLA_H; i++)); do
+  for ((i = 0; i < h; i++)); do
     move_to $((band_row + i)) "$col"
     printf '%*s' "$fire_len" ''
   done
@@ -203,8 +198,9 @@ scorch_band_right() {
 
 scorch_band() {
   local band_row=$1
+  local h=${2:-$ZILLA_H}
   local i
-  for ((i = 0; i < ZILLA_H; i++)); do
+  for ((i = 0; i < h; i++)); do
     move_to $((band_row + i)) 1
     printf '%*s' "$TERM_COLS" ''
   done
@@ -219,13 +215,12 @@ clear_screen() {
 # before stepping down to the next band — exactly like paclear's pac-man sweep.
 animate() {
   get_dims
-  get_content_lines
 
-  local diff_y=$(( CONTENT_LINES - ZILLA_H ))
+  local diff_y=$(( TERM_ROWS - ZILLA_H ))
   (( diff_y < 0 )) && diff_y=0
 
   local y x frame=0 toggle=0 stride max_x
-  local fire_col
+  local fire_col band_row band_h
 
   stride=$(walk_stride)
   max_x=$(( TERM_COLS - ZILLA_W ))
@@ -234,35 +229,36 @@ animate() {
   printf '%s' "$HIDE_CURSOR"
 
   for ((y = 0; y <= diff_y; y += ZILLA_H)); do
-    local band_row=$((y + 1))
+    band_row=$((y + 1))
+    band_h=$(band_height "$band_row")
 
     for ((x = 1; x <= max_x; x += stride)); do
       if (( ENABLE_FIRE && toggle == 10 )); then
-        draw_sprite ZILLA_BREATH "$band_row" "$x"
+        draw_sprite ZILLA_BREATH "$band_row" "$x" "$band_h"
         fire_col=$((x + MOUTH_COL))
-        draw_fire_beam "$band_row" "$fire_col"
+        draw_fire_beam "$band_row" "$fire_col" "$band_h"
         breath_delay
-        scorch_band_right "$band_row" "$fire_col"
-        erase_sprite "$band_row" "$x"
+        scorch_band_right "$band_row" "$fire_col" "$band_h"
+        erase_sprite "$band_row" "$x" "$band_h"
         toggle=0
       else
         if (( frame % 2 == 0 )); then
-          draw_sprite ZILLA_WALK1 "$band_row" "$x"
+          draw_sprite ZILLA_WALK1 "$band_row" "$x" "$band_h"
         else
-          draw_sprite ZILLA_WALK2 "$band_row" "$x"
+          draw_sprite ZILLA_WALK2 "$band_row" "$x" "$band_h"
         fi
         frame_delay
-        erase_sprite "$band_row" "$x"
+        erase_sprite "$band_row" "$x" "$band_h"
         ((toggle++)) || true
         ((frame++)) || true
       fi
     done
 
-    scorch_band "$band_row"
+    scorch_band "$band_row" "$band_h"
   done
 
   printf '%s' "$SHOW_CURSOR"
-  move_to $(( CONTENT_LINES < TERM_ROWS ? CONTENT_LINES + 1 : TERM_ROWS )) 1
+  move_to 1 1
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
