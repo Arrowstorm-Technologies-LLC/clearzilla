@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.18"
+VERSION="0.3.19"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -212,6 +212,13 @@ draw_debris_particle() {
   printf '%b%s%b' "$color" "$ch" "$RESET"
 }
 
+# True when a debris cell sits under the live Godzilla footprint.
+debris_under_sprite() {
+  local r=$1 c=$2 sprite_row=$3 sprite_col=$4 sprite_h=$5
+  (( sprite_col < 1 || sprite_h < 1 )) && return 1
+  (( r >= sprite_row && r < sprite_row + sprite_h && c >= sprite_col && c < sprite_col + ZILLA_W ))
+}
+
 prune_debris_tracking() {
   while (( ${#DEBRIS_SITES[@]} > DEBRIS_TRACK_MAX )); do
     DEBRIS_SITES=( "${DEBRIS_SITES[@]:1}" )
@@ -279,6 +286,7 @@ count_band_debris() {
 # Smolder wake debris and any band ash still cooling down.
 animate_debris_wake() {
   local tick=$1 band_row=$2 band_x=$3 band_h=$4
+  local sprite_row=${5:-0} sprite_col=${6:-0} sprite_h=${7:-0}
   local site r c seed site_band stage tail_start ch color animated=0
   tail_start=$(( band_x - DEBRIS_ANIM_TAIL ))
   (( tail_start < 1 )) && tail_start=1
@@ -289,6 +297,7 @@ animate_debris_wake() {
     stage=${stage:-0}
     (( site_band != band_row )) && continue
     (( r < band_row || r >= band_row + band_h )) && continue
+    debris_under_sprite "$r" "$c" "$sprite_row" "$sprite_col" "$sprite_h" && continue
     if (( stage == 0 )); then
       (( c >= band_x || c < tail_start )) && continue
       (( (seed + tick) % 2 != 0 )) && continue
@@ -306,37 +315,61 @@ animate_debris_wake() {
 # Gracefully dissolve debris in random pockets — not a Godzilla-style column sweep.
 dissolve_band_debris_batch() {
   local band_row=$1 band_h=$2 budget=$3 tick=$4
-  local -a band_idxs=()
-  local idx site r c seed site_band stage next_stage
-  local dissolved=0 start_idx pick
+  local sprite_row=${5:-0} sprite_col=${6:-0} sprite_h=${7:-0}
+  local -a candidates=() picked=() new_sites=()
+  local site r c seed site_band stage next_stage
+  local dissolved=0 i start found pr pc pseed pb ps pst
 
   (( budget < 1 )) && return 0
 
-  for idx in "${!DEBRIS_SITES[@]}"; do
-    read -r _ _ _ site_band _ <<< "${DEBRIS_SITES[$idx]}"
-    (( site_band == band_row )) && band_idxs+=( "$idx" )
-  done
-  (( ${#band_idxs[@]} == 0 )) && return 0
-
-  start_idx=$(( (tick * 17 + band_row * 13) % ${#band_idxs[@]} ))
-  for ((pick = 0; pick < ${#band_idxs[@]} && dissolved < budget; pick++)); do
-    idx=${band_idxs[$(( (start_idx + pick * 7) % ${#band_idxs[@]} ))]}
-    read -r r c seed site_band stage <<< "${DEBRIS_SITES[$idx]}"
+  for site in "${DEBRIS_SITES[@]}"; do
+    read -r r c seed site_band stage <<< "$site"
     stage=${stage:-0}
+    (( site_band != band_row )) && continue
     (( r < band_row || r >= band_row + band_h )) && continue
+    debris_under_sprite "$r" "$c" "$sprite_row" "$sprite_col" "$sprite_h" && continue
+    candidates+=( "$site" )
+  done
+  (( ${#candidates[@]} == 0 )) && return 0
+
+  start=$(( (tick * 17 + band_row * 13) % ${#candidates[@]} ))
+  for ((i = 0; i < ${#candidates[@]} && dissolved < budget; i++)); do
+    site=${candidates[$(( (start + i * 7) % ${#candidates[@]} ))]}
+    read -r r c seed site_band stage <<< "$site"
+    stage=${stage:-0}
+    found=0
+    for pick in "${picked[@]}"; do
+      read -r pr pc _ _ _ <<< "$pick"
+      if (( r == pr && c == pc )); then
+        found=1
+        break
+      fi
+    done
+    (( found )) && continue
     next_stage=$(( stage + 1 ))
     draw_debris_dissolve "$r" "$c" "$seed" "$next_stage" "$tick"
-    if (( next_stage >= DEBRIS_DISSOLVE_STAGES )); then
-      unset "DEBRIS_SITES[$idx]"
-    else
-      DEBRIS_SITES[$idx]="$r $c $seed $site_band $next_stage"
-    fi
+    picked+=( "$r $c $seed $site_band $next_stage" )
     ((dissolved++)) || true
   done
+  (( dissolved == 0 )) && return 0
 
-  if (( dissolved > 0 )); then
-    DEBRIS_SITES=( "${DEBRIS_SITES[@]}" )
-  fi
+  for site in "${DEBRIS_SITES[@]}"; do
+    read -r r c seed site_band stage <<< "$site"
+    stage=${stage:-0}
+    found=0
+    for pick in "${picked[@]}"; do
+      read -r pr pc pseed pb ps pst <<< "$pick"
+      if (( r == pr && c == pc )); then
+        found=1
+        if (( pst < DEBRIS_DISSOLVE_STAGES )); then
+          new_sites+=( "$pr $pc $pseed $pb $pst" )
+        fi
+        break
+      fi
+    done
+    (( found )) || new_sites+=( "$site" )
+  done
+  DEBRIS_SITES=( "${new_sites[@]}" )
 }
 
 dissolve_step_budget() {
@@ -349,7 +382,7 @@ dissolve_step_budget() {
 
 finish_band_dissolve() {
   local band_row=$1 band_h=$2
-  local tick=0 remaining budget
+  local tick=0 remaining before remaining_after budget
   while true; do
     remaining=$(count_band_debris "$band_row")
     (( remaining == 0 )) && break
@@ -358,9 +391,12 @@ finish_band_dissolve() {
     if (( ENABLE_DEBRIS_ANIM )); then
       animate_debris_wake "$tick" "$band_row" "$TERM_COLS" "$band_h"
     fi
+    before=$remaining
     budget=$DEBRIS_DISSOLVE_FINISH_MAX
     (( remaining < budget )) && budget=$remaining
     dissolve_band_debris_batch "$band_row" "$band_h" "$budget" "$tick"
+    remaining_after=$(count_band_debris "$band_row")
+    (( remaining_after >= before )) && break
     debris_dissolve_delay
   done
 }
@@ -500,16 +536,17 @@ animate() {
     for ((x = 1; x <= max_x; x += stride)); do
       ((walk_step++)) || true
 
-      if (( y > 0 )); then
-        if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
-          animate_debris_wake "$debris_tick" "$prev_band_row" "$TERM_COLS" "$prev_band_h"
-        fi
-        dissolve_budget=$(dissolve_step_budget "$x" "$max_x")
-        dissolve_band_debris_batch "$prev_band_row" "$prev_band_h" "$dissolve_budget" "$debris_tick"
-      fi
-
       if (( ENABLE_FIRE && toggle == 10 )); then
         draw_sprite ZILLA_BREATH "$band_row" "$x" "$band_h"
+        if (( y > 0 )); then
+          if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
+            animate_debris_wake "$debris_tick" "$prev_band_row" "$TERM_COLS" "$prev_band_h" \
+              "$band_row" "$x" "$band_h"
+          fi
+          dissolve_budget=$(dissolve_step_budget "$x" "$max_x")
+          dissolve_band_debris_batch "$prev_band_row" "$prev_band_h" "$dissolve_budget" "$debris_tick" \
+            "$band_row" "$x" "$band_h"
+        fi
         fire_col=$((x + MOUTH_COL))
         draw_fire_beam "$band_row" "$fire_col" "$band_h"
         breath_delay
@@ -518,13 +555,23 @@ animate() {
         toggle=0
       else
         draw_sprite ZILLA_WALK1 "$band_row" "$x" "$band_h"
+        if (( y > 0 )); then
+          if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
+            animate_debris_wake "$debris_tick" "$prev_band_row" "$TERM_COLS" "$prev_band_h" \
+              "$band_row" "$x" "$band_h"
+          fi
+          dissolve_budget=$(dissolve_step_budget "$x" "$max_x")
+          dissolve_band_debris_batch "$prev_band_row" "$prev_band_h" "$dissolve_budget" "$debris_tick" \
+            "$band_row" "$x" "$band_h"
+        fi
         if (( ENABLE_DEBRIS_ANIM && walk_step % DEBRIS_ANIM_INTERVAL == 0 )); then
           ((debris_tick++)) || true
-          animate_debris_wake "$debris_tick" "$band_row" "$x" "$band_h"
+          animate_debris_wake "$debris_tick" "$band_row" "$x" "$band_h" \
+            "$band_row" "$x" "$band_h"
         fi
         frame_delay
         leave_stomp_wake "$band_row" "$x" "$stride" "$band_h" "$debris_tick"
-        (( ENABLE_DEBRIS_ANIM )) && prune_debris_tracking "$band_row" "$x"
+        (( ENABLE_DEBRIS_ANIM )) && prune_debris_tracking
         ((toggle++)) || true
         ((frame++)) || true
       fi
