@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.9"
+VERSION="0.3.10"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -169,21 +169,6 @@ erase_sprite() {
   done
 }
 
-# Blank only the overlap zone the next stomp will redraw — leave the wake slice alone.
-erase_sprite_overlap() {
-  local row=$1 col=$2 stride=$3
-  local h=${4:-$ZILLA_H}
-  local erase_col=$(( col + stride ))
-  local erase_w=$(( ZILLA_W - stride ))
-  local blank i
-  (( erase_w < 1 )) && return 0
-  blank=$(printf '%*s' "$erase_w" '')
-  for ((i = 0; i < h; i++)); do
-    move_to $((row + i)) "$erase_col"
-    printf '%s' "$blank"
-  done
-}
-
 # Sparse ash particles — stored globally and animated until the final clear.
 declare -a DEBRIS_SITES=()
 
@@ -257,6 +242,45 @@ scatter_debris() {
   done
 }
 
+# Completed bands stay on screen but no longer need tracking.
+prune_band_debris() {
+  local min_band_row=$1
+  local -a kept=()
+  local site r c seed site_band
+  for site in "${DEBRIS_SITES[@]}"; do
+    read -r r c seed site_band <<< "$site"
+    if (( site_band < min_band_row )); then
+      continue
+    fi
+    kept+=( "$site" )
+  done
+  DEBRIS_SITES=( "${kept[@]}" )
+}
+
+# Settled ash is already on screen; stop tracking it to keep redraw work flat.
+prune_settled_debris() {
+  local band_row=$1 band_x=$2
+  local tail_start=$(( band_x - DEBRIS_ANIM_TAIL ))
+  local -a kept=()
+  local site r c seed site_band
+  (( tail_start < 1 )) && tail_start=1
+  for site in "${DEBRIS_SITES[@]}"; do
+    read -r r c seed site_band <<< "$site"
+    if (( site_band == band_row && c < tail_start )); then
+      continue
+    fi
+    kept+=( "$site" )
+  done
+  DEBRIS_SITES=( "${kept[@]}" )
+}
+
+leave_stomp_wake() {
+  local band_row=$1 col=$2 stride=$3 band_h=$4 tick=$5
+  erase_sprite "$band_row" "$col" "$band_h"
+  scatter_debris "$band_row" "$col" "$stride" "$band_h" "$tick"
+  prune_settled_debris "$band_row" "$col"
+}
+
 draw_fire_beam() {
   local band_row=$1 col=$2
   local h=${3:-$ZILLA_H}
@@ -328,6 +352,7 @@ animate() {
   for ((y = 0; y <= diff_y; y += ZILLA_H)); do
     band_row=$((y + 1))
     band_h=$(band_height "$band_row")
+    (( y > 0 )) && prune_band_debris "$band_row"
 
     for ((x = 1; x <= max_x; x += stride)); do
       ((walk_step++)) || true
@@ -338,8 +363,7 @@ animate() {
         draw_fire_beam "$band_row" "$fire_col" "$band_h"
         breath_delay
         scorch_band_right "$band_row" "$fire_col" "$band_h"
-        erase_sprite_overlap "$band_row" "$x" "$stride" "$band_h"
-        scatter_debris "$band_row" "$x" "$stride" "$band_h" "$debris_tick"
+        leave_stomp_wake "$band_row" "$x" "$stride" "$band_h" "$debris_tick"
         toggle=0
       else
         draw_sprite ZILLA_WALK1 "$band_row" "$x" "$band_h"
@@ -348,8 +372,7 @@ animate() {
           animate_debris "$debris_tick" "$band_row" "$x" "$band_h"
         fi
         frame_delay
-        erase_sprite_overlap "$band_row" "$x" "$stride" "$band_h"
-        scatter_debris "$band_row" "$x" "$stride" "$band_h" "$debris_tick"
+        leave_stomp_wake "$band_row" "$x" "$stride" "$band_h" "$debris_tick"
         ((toggle++)) || true
         ((frame++)) || true
       fi
