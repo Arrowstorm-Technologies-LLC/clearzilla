@@ -52,8 +52,8 @@ Pipe and non-TTY contexts automatically fall back to an instant clear (no animat
 ## How it works
 
 1. Detects terminal size and how many lines of content are on screen (via cursor position).
-2. Draws Godzilla's head — profile view, dorsal plates, open jaw — fixed on the **right** side of the terminal.
-3. A cone-shaped flame fans out from his mouth, sweeping **leftward** column by column.
+2. Draws Godzilla's head — detailed profile, dorsal plates, open jaw — fixed on the **left** side, facing right.
+3. A cone-shaped flame fans out from his mouth, sweeping **rightward** column by column.
 4. Characters are cleared **only** when the fire front reaches them — untouched content stays visible until then.
 5. The fan widens as it travels (turbulent edges, hot core, outer wisps, trailing embers).
 6. Finishes with a full terminal reset.
