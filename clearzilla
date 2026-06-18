@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.1"
+VERSION="0.3.2"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -105,16 +105,39 @@ get_dims() {
   TERM_COLS=$cols
 }
 
+get_content_lines() {
+  local row=0
+  if [[ -t 1 ]] && exec 3<>/dev/tty 2>/dev/null; then
+    printf '\033[6n' >&3
+    IFS=';' read -rsd R -t 0.05 _ row <&3 2>/dev/null || true
+    exec 3>&-
+  fi
+  if [[ -z "$row" || "$row" -eq 0 ]]; then
+    row=$TERM_ROWS
+  fi
+  if (( row < ZILLA_H )); then
+    row=$ZILLA_H
+  elif (( row > TERM_ROWS )); then
+    row=$TERM_ROWS
+  fi
+  CONTENT_LINES=$row
+}
+
 frame_delay() {
-  local ms=$(( 12 / SPEED ))
-  (( ms < 1 )) && ms=1
+  local ms=$(( 25 / SPEED ))
+  (( ms < 2 )) && ms=2
+  sleep "0.$(printf '%03d' "$ms")"
+}
+
+breath_delay() {
+  local ms=$(( 60 / SPEED ))
+  (( ms < 4 )) && ms=4
   sleep "0.$(printf '%03d' "$ms")"
 }
 
 walk_stride() {
-  local stride=$(( SPEED + 3 ))
-  (( stride < 5 )) && stride=5
-  (( ZILLA_W > 30 && stride < 6 )) && stride=6
+  local stride=$SPEED
+  (( stride < 2 )) && stride=2
   echo "$stride"
 }
 
@@ -147,23 +170,20 @@ erase_sprite() {
 draw_fire_beam() {
   local band_row=$1 col=$2
   local fire_len=$((TERM_COLS - col + 1))
-  local i j ch line
+  local i j
   if (( fire_len <= 0 )); then
     return
   fi
   for ((i = 0; i < ZILLA_H; i++)); do
-    line=""
+    move_to $((band_row + i)) "$col"
     for ((j = 0; j < fire_len; j++)); do
       case $((j % 4)) in
-        0) ch='~' ;;
-        1) ch='=' ;;
-        2) ch='*' ;;
-        3) ch='>' ;;
+        0) printf '%b~%b' "$RED" "$RESET" ;;
+        1) printf '%b=%b' "$ORANGE" "$RESET" ;;
+        2) printf '%b*%b' "$YELLOW" "$RESET" ;;
+        3) printf '%b>%b' "$RED" "$RESET" ;;
       esac
-      line+="$ch"
     done
-    move_to $((band_row + i)) "$col"
-    printf '%b%s%b' "$ORANGE" "$line" "$RESET"
   done
 }
 
@@ -184,21 +204,14 @@ clear_screen() {
   printf '\033[2J\033[H'
 }
 
-enter_alt_screen() {
-  printf '\033[?1049h\033[H'
-}
-
-leave_alt_screen() {
-  printf '\033[?1049l'
-}
-
 # ── animation (paclear-style band sweep) ──────────────────────────────────────
 # Godzilla is ZILLA_H lines tall. Each horizontal pass clears one full band
 # before stepping down to the next band — exactly like paclear's pac-man sweep.
 animate() {
   get_dims
+  get_content_lines
 
-  local diff_y=$(( TERM_ROWS - ZILLA_H ))
+  local diff_y=$(( CONTENT_LINES - ZILLA_H ))
   (( diff_y < 0 )) && diff_y=0
 
   local y x frame=0 toggle=0 stride max_x
@@ -208,7 +221,6 @@ animate() {
   max_x=$(( TERM_COLS - ZILLA_W ))
   (( max_x < 1 )) && max_x=1
 
-  enter_alt_screen
   printf '%s' "$HIDE_CURSOR"
 
   for ((y = 0; y <= diff_y; y += ZILLA_H)); do
@@ -219,6 +231,7 @@ animate() {
         draw_sprite ZILLA_BREATH "$band_row" "$x"
         fire_col=$((x + MOUTH_COL))
         draw_fire_beam "$band_row" "$fire_col"
+        breath_delay
         scorch_band_right "$band_row" "$fire_col"
         erase_sprite "$band_row" "$x"
         toggle=0
@@ -237,7 +250,6 @@ animate() {
   done
 
   printf '%s' "$SHOW_CURSOR"
-  leave_alt_screen
   clear_screen
 }
 
