@@ -52,6 +52,13 @@ readonly -a ZILLA_SPRITE=(
 readonly ZILLA_H=${#ZILLA_SPRITE[@]}
 readonly ZILLA_W=39
 
+declare -a ZILLA_MIRRORED=()
+for _line in "${ZILLA_SPRITE[@]}"; do
+  ZILLA_MIRRORED+=("$(printf '%s' "$_line" | rev)")
+done
+unset _line
+readonly -a ZILLA_MIRRORED
+
 SPEED=1
 FAST=0
 
@@ -149,10 +156,10 @@ clear_screen() {
 animate() {
   get_dims
 
-  local x stride max_x band_row band_h
+  local x stride max_x band_row band_h band_num=0
 
   stride=$(walk_stride)
-  max_x=$(( TERM_COLS - ZILLA_W ))
+  max_x=$(( TERM_COLS - ZILLA_W + 1 ))
   (( max_x < 1 )) && max_x=1
 
   printf '%s' "$HIDE_CURSOR"
@@ -160,11 +167,29 @@ animate() {
   for ((band_row = 1; band_row <= TERM_ROWS; band_row += ZILLA_H)); do
     band_h=$(band_height "$band_row")
 
-    for ((x = 1; x <= max_x; x += stride)); do
-      draw_sprite ZILLA_SPRITE "$band_row" "$x" "$band_h"
-      frame_delay
-      erase_sprite "$band_row" "$x" "$band_h"
-    done
+    if (( band_num % 2 == 0 )); then
+      x=1
+      while true; do
+        draw_sprite ZILLA_SPRITE "$band_row" "$x" "$band_h"
+        frame_delay
+        erase_sprite "$band_row" "$x" "$band_h"
+        (( x >= max_x )) && break || true
+        (( x += stride ))
+        (( x > max_x )) && x=$max_x || true
+      done
+    else
+      x=$max_x
+      while true; do
+        draw_sprite ZILLA_MIRRORED "$band_row" "$x" "$band_h"
+        frame_delay
+        erase_sprite "$band_row" "$x" "$band_h"
+        (( x <= 1 )) && break || true
+        (( x -= stride ))
+        (( x < 1 )) && x=1 || true
+      done
+    fi
+
+    (( band_num++ )) || true
   done
 
   printf '%s' "$SHOW_CURSOR"
