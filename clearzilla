@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.22"
+VERSION="0.3.23"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -147,7 +147,7 @@ erase_sprite() {
 }
 
 clear_screen() {
-  printf '\033[2J\033[H'
+  printf '\033[3J\033[2J\033[H'
 }
 
 # ── animation (band sweep) ────────────────────────────────────────────────────
