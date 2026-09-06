@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.29"
+VERSION="0.3.30"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -139,6 +139,7 @@ draw_sprite() {
 erase_sprite() {
   local row=$1 col=$2
   local h=${3:-$ZILLA_H}
+  local at_edge=${4:-0}
   local blank
   blank=$(printf '%*s' "$ZILLA_W" '')
   local i
@@ -147,10 +148,11 @@ erase_sprite() {
     printf '%s' "$blank"
     # \033[K (erase to end of line) reaches the terminal's true last
     # column without ever placing a character glyph there -- the sprite
-    # itself stays capped one column short (see max_x), but this still
-    # wipes whatever pre-existing content sat in that column so it
-    # doesn't linger, untouched, until the closing full-screen erase.
-    printf '\033[K'
+    # itself stays capped one column short (see max_x). Only fire this
+    # when the sprite is actually at the sweep's far edge (at_edge); doing
+    # it on every frame erases everything past the sprite immediately,
+    # well ahead of Godzilla actually walking there.
+    (( at_edge )) && printf '\033[K' || true
   done
 }
 
@@ -203,7 +205,7 @@ animate() {
       while true; do
         draw_sprite ZILLA_SPRITE "$band_row" "$x" "$band_h"
         frame_delay
-        erase_sprite "$band_row" "$x" "$band_h"
+        erase_sprite "$band_row" "$x" "$band_h" "$(( x == max_x ))"
         (( x >= max_x )) && break || true
         (( x += stride ))
         (( x > max_x )) && x=$max_x || true
@@ -213,7 +215,7 @@ animate() {
       while true; do
         draw_sprite ZILLA_MIRRORED "$band_row" "$x" "$band_h"
         frame_delay
-        erase_sprite "$band_row" "$x" "$band_h"
+        erase_sprite "$band_row" "$x" "$band_h" "$(( x == max_x ))"
         (( x <= 1 )) && break || true
         (( x -= stride ))
         (( x < 1 )) && x=1 || true
