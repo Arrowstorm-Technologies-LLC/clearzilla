@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.26"
+VERSION="0.3.23"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -147,30 +147,7 @@ erase_sprite() {
 }
 
 clear_screen() {
-  # A plain \033[2J/\033[3J erase leaves some terminals (observed on
-  # Konsole) with stale pixels from a preceding burst of cursor-addressed
-  # writes -- the erase is logically correct but the terminal never
-  # repaints the affected cells. `tput reset` forces the same full
-  # terminal reset a real `clear`/`reset` does, which repaints
-  # unconditionally; \033c is the fallback where tput/terminfo isn't
-  # available. Follow with \033[3J since a mode reset doesn't necessarily
-  # touch scrollback.
-  tput reset 2>/dev/null || printf '\033c'
-  printf '\033[3J\033[H'
-  run_post_clear_hook
-}
-
-# Optional extensibility point: if CLEARZILLA_POST_CLEAR names an exported
-# function or a command on PATH, run it right after the screen clears. Lets
-# a shell rc reprint a banner/prompt/MOTD after clearzilla the same way it
-# would after plain `clear` -- clearzilla has no opinion on what that is.
-# A failing hook must never take clearzilla down with it under set -e, hence
-# the `|| true` rather than relying on the if-condition's own -e exemption.
-run_post_clear_hook() {
-  local hook=${CLEARZILLA_POST_CLEAR:-}
-  if [[ -n "$hook" ]] && command -v "$hook" >/dev/null 2>&1; then
-    "$hook" || true
-  fi
+  printf '\033[3J\033[2J\033[H'
 }
 
 # ── animation (band sweep) ────────────────────────────────────────────────────
