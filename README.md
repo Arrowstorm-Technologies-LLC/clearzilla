@@ -37,9 +37,14 @@ rack clearzilla Arrowstorm-Technologies-LLC/clearzilla
 clearzilla              Stomp in and clear the screen
 clearzilla -s <n>       Speed multiplier (default: 1, higher = faster)
 clearzilla -f           Skip animation, clear immediately
+clearzilla -t           Draw Godzilla in plain white, ignoring the terminal's theme colors
 clearzilla -h           Show help
 clearzilla -v           Show version
 ```
+
+By default Godzilla draws in the terminal's own default foreground color, so
+he picks up whatever color scheme your terminal profile uses. `-t` overrides
+that with a fixed bright white, if you'd rather he looked the same everywhere.
 
 ### Alias it over `clear`
 
@@ -72,7 +77,7 @@ Inspired by [paclear](https://github.com/orangekame3/paclear), clearzilla uses a
 
 1. Reads terminal dimensions via `stty` / `tput`.
 2. Steps down the screen in bands, continuing until every row has been covered (including any partial band at the bottom).
-3. Each band: Godzilla walks left-to-right (bands alternate direction), erasing the sprite footprint as it moves. The sweep deliberately stops one column short of the terminal's last column, since a band covering the last row would otherwise write to the terminal's absolute bottom-right cell -- a classic ANSI edge case that can make a terminal register a deferred wrap and scroll unexpectedly on the next write.
+3. Each band: Godzilla walks left-to-right (bands alternate direction), erasing the sprite footprint as it moves, covering every column including the last. Autowrap is turned off for the sweep's duration so a band covering the terminal's last row can safely write to the absolute bottom-right cell without the terminal registering a deferred wrap and scrolling unexpectedly.
 4. Finishes with a full terminal reset (`clear`).
 
 More terminal rows → more bands to sweep → longer rampage.

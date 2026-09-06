@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.27"
+VERSION="0.3.28"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -61,6 +61,7 @@ readonly -a ZILLA_MIRRORED
 
 SPEED=1
 FAST=0
+FORCE_WHITE=0
 
 usage() {
   cat <<EOF
@@ -70,6 +71,7 @@ ${BOLD}Usage:${RESET}
   clearzilla              Stomp in and clear the screen
   clearzilla ${YELLOW}-s${RESET} ${DIM}<n>${RESET}            Speed multiplier (default: 1, higher = faster)
   clearzilla ${YELLOW}-f${RESET}                   Skip animation, clear immediately
+  clearzilla ${YELLOW}-t${RESET}                   Draw Godzilla in plain white, ignoring the terminal's theme colors
   clearzilla ${YELLOW}-h${RESET}                   Show this help
   clearzilla ${YELLOW}-v${RESET}                   Show version
 
@@ -173,17 +175,21 @@ animate() {
   local x stride max_x band_row band_h band_num=0
 
   stride=$(walk_stride)
-  # Deliberately never reach TERM_COLS: a band that includes the terminal's
-  # last row would then write to its absolute bottom-right cell, the
-  # classic ANSI corner case where a terminal can register a deferred wrap
-  # and scroll on the very next write. One column short of full-width
-  # coverage is invisible once the closing clear_screen erases everything
-  # anyway; touching that corner is what actually caused the persistent
-  # misalignment (cursor never landing back at the true top) this fixes.
-  max_x=$(( TERM_COLS - ZILLA_W ))
+  max_x=$(( TERM_COLS - ZILLA_W + 1 ))
   (( max_x < 1 )) && max_x=1
 
   printf '%s' "$HIDE_CURSOR"
+  # A band covering the terminal's last row writes, at full-width coverage,
+  # to its absolute bottom-right cell -- the classic ANSI corner case where
+  # a terminal registers a deferred line-wrap and scrolls on the very next
+  # write. With dozens of frames left in that band still touching the same
+  # corner, those scrolls accumulate into the screen's top scrolling out of
+  # view before the sweep even finishes. Autowrap (DECAWM) is what makes a
+  # write to the last column defer-wrap in the first place; disabling it
+  # for the sweep's duration means writing that cell just leaves the
+  # cursor there, no wrap, no scroll -- full-width coverage stays safe.
+  printf '\033[?7l'
+  (( FORCE_WHITE )) && printf '\033[97m'
 
   for ((band_row = 1; band_row <= TERM_ROWS; band_row += ZILLA_H)); do
     band_h=$(band_height "$band_row")
@@ -213,12 +219,14 @@ animate() {
     (( band_num++ )) || true
   done
 
+  printf '\033[?7h'
+  (( FORCE_WHITE )) && printf '%s' "$RESET"
   printf '%s' "$SHOW_CURSOR"
   clear_screen
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
-while getopts 's:fhv' opt; do
+while getopts 's:fthv' opt; do
   case "$opt" in
     s)
       SPEED=$OPTARG
@@ -228,6 +236,7 @@ while getopts 's:fhv' opt; do
       fi
       ;;
     f) FAST=1 ;;
+    t) FORCE_WHITE=1 ;;
     h)
       usage
       exit 0
