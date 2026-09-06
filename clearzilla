@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.25"
+VERSION="0.3.26"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -147,21 +147,17 @@ erase_sprite() {
 }
 
 clear_screen() {
-  reset_terminal_modes
-  printf '\033[3J\033[2J\033[H'
+  # A plain \033[2J/\033[3J erase leaves some terminals (observed on
+  # Konsole) with stale pixels from a preceding burst of cursor-addressed
+  # writes -- the erase is logically correct but the terminal never
+  # repaints the affected cells. `tput reset` forces the same full
+  # terminal reset a real `clear`/`reset` does, which repaints
+  # unconditionally; \033c is the fallback where tput/terminfo isn't
+  # available. Follow with \033[3J since a mode reset doesn't necessarily
+  # touch scrollback.
+  tput reset 2>/dev/null || printf '\033c'
+  printf '\033[3J\033[H'
   run_post_clear_hook
-}
-
-# A prior program (TUI apps, editors, etc.) can exit leaving the scroll
-# region or origin mode set. If that survives, \033[H homes to the top of
-# that stale region instead of the real top-left, and absolute row/col
-# addressing during the sweep lands in the wrong place -- leftover sprite
-# fragments and no truly fresh line at the top, even after a clear. DECSTR
-# (soft reset) undoes this without a full hard reset (which would flash/
-# reflow the screen); the explicit \033[r and \033[?6l back it up on
-# terminals with partial DECSTR support.
-reset_terminal_modes() {
-  printf '\033[!p\033[r\033[?6l'
 }
 
 # Optional extensibility point: if CLEARZILLA_POST_CLEAR names an exported
@@ -189,7 +185,6 @@ animate() {
   max_x=$(( TERM_COLS - ZILLA_W + 1 ))
   (( max_x < 1 )) && max_x=1
 
-  reset_terminal_modes
   printf '%s' "$HIDE_CURSOR"
 
   for ((band_row = 1; band_row <= TERM_ROWS; band_row += ZILLA_H)); do

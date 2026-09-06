@@ -73,7 +73,7 @@ Inspired by [paclear](https://github.com/orangekame3/paclear), clearzilla uses a
 1. Reads terminal dimensions via `stty` / `tput`.
 2. Steps down the screen in bands, continuing until every row has been covered (including any partial band at the bottom).
 3. Each band: Godzilla walks left-to-right, erasing the sprite footprint as it moves.
-4. Finishes with a soft terminal reset (clears any stale scroll region/origin mode) plus a full-screen and scrollback erase.
+4. Finishes with a full terminal reset (`tput reset`, falling back to `\033c`) plus a scrollback erase.
 
 More terminal rows → more bands to sweep → longer rampage.
 
