@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.28"
+VERSION="0.3.29"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -145,6 +145,12 @@ erase_sprite() {
   for ((i = 0; i < h; i++)); do
     move_to $((row + i)) "$col"
     printf '%s' "$blank"
+    # \033[K (erase to end of line) reaches the terminal's true last
+    # column without ever placing a character glyph there -- the sprite
+    # itself stays capped one column short (see max_x), but this still
+    # wipes whatever pre-existing content sat in that column so it
+    # doesn't linger, untouched, until the closing full-screen erase.
+    printf '\033[K'
   done
 }
 
@@ -175,20 +181,18 @@ animate() {
   local x stride max_x band_row band_h band_num=0
 
   stride=$(walk_stride)
-  max_x=$(( TERM_COLS - ZILLA_W + 1 ))
+  # Deliberately never reach TERM_COLS: a band that includes the terminal's
+  # last row would then place a sprite glyph in its absolute bottom-right
+  # cell. Disabling autowrap (DECAWM) around the sweep did NOT prevent the
+  # resulting misalignment, which means it isn't a deferred-wrap/scroll
+  # issue -- something about placing a character glyph there at all is
+  # what triggers it. One column short of full-width sprite coverage is
+  # invisible (erase_sprite still wipes that column via \033[K, a control
+  # sequence rather than a glyph write, so nothing lingers there either).
+  max_x=$(( TERM_COLS - ZILLA_W ))
   (( max_x < 1 )) && max_x=1
 
   printf '%s' "$HIDE_CURSOR"
-  # A band covering the terminal's last row writes, at full-width coverage,
-  # to its absolute bottom-right cell -- the classic ANSI corner case where
-  # a terminal registers a deferred line-wrap and scrolls on the very next
-  # write. With dozens of frames left in that band still touching the same
-  # corner, those scrolls accumulate into the screen's top scrolling out of
-  # view before the sweep even finishes. Autowrap (DECAWM) is what makes a
-  # write to the last column defer-wrap in the first place; disabling it
-  # for the sweep's duration means writing that cell just leaves the
-  # cursor there, no wrap, no scroll -- full-width coverage stays safe.
-  printf '\033[?7l'
   (( FORCE_WHITE )) && printf '\033[97m'
 
   for ((band_row = 1; band_row <= TERM_ROWS; band_row += ZILLA_H)); do
@@ -219,7 +223,6 @@ animate() {
     (( band_num++ )) || true
   done
 
-  printf '\033[?7h'
   (( FORCE_WHITE )) && printf '%s' "$RESET"
   printf '%s' "$SHOW_CURSOR"
   clear_screen

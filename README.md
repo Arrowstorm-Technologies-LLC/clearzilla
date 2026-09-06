@@ -77,7 +77,7 @@ Inspired by [paclear](https://github.com/orangekame3/paclear), clearzilla uses a
 
 1. Reads terminal dimensions via `stty` / `tput`.
 2. Steps down the screen in bands, continuing until every row has been covered (including any partial band at the bottom).
-3. Each band: Godzilla walks left-to-right (bands alternate direction), erasing the sprite footprint as it moves, covering every column including the last. Autowrap is turned off for the sweep's duration so a band covering the terminal's last row can safely write to the absolute bottom-right cell without the terminal registering a deferred wrap and scrolling unexpectedly.
+3. Each band: Godzilla walks left-to-right (bands alternate direction), erasing the sprite footprint as it moves. The sprite itself stops one column short of the terminal's last column -- placing a glyph in a band's absolute bottom-right cell causes a scroll/misalignment on some terminals -- but the erase pass still reaches that column via an erase-to-end-of-line control sequence, so nothing lingers there untouched until the closing clear.
 4. Finishes with a full terminal reset (`clear`).
 
 More terminal rows → more bands to sweep → longer rampage.
