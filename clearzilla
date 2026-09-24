@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.30"
+VERSION="0.3.31"
 
 # ── styling ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -207,7 +207,7 @@ animate() {
         frame_delay
         erase_sprite "$band_row" "$x" "$band_h" "$(( x == max_x ))"
         (( x >= max_x )) && break || true
-        (( x += stride ))
+        x=$(( x + stride ))
         (( x > max_x )) && x=$max_x || true
       done
     else
@@ -217,7 +217,7 @@ animate() {
         frame_delay
         erase_sprite "$band_row" "$x" "$band_h" "$(( x == max_x ))"
         (( x <= 1 )) && break || true
-        (( x -= stride ))
+        x=$(( x - stride ))
         (( x < 1 )) && x=1 || true
       done
     fi
